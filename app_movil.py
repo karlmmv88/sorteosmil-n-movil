@@ -448,7 +448,7 @@ def main():
 
     # ---------------- PESTAÑA VENTA ----------------
         # --- SECCIÓN: REPORTE VISUAL ---
-        with st.expander("📷 GENERAR REPORTE VISUAL (IMAGEN)", expanded=False):
+    with st.expander("📷 GENERAR REPORTE VISUAL (IMAGEN)", expanded=False):
             st.info(f"Generando imagen de Alta Resolución (4000x3000px) para {cantidad_boletos} números.")
             col_rep1, col_rep2 = st.columns(2)
             
