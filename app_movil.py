@@ -410,7 +410,7 @@ def main():
                 # Abonar
                 if (b_precio - b_abonado) > 0:
                     ma = st.number_input("Monto Abono", min_value=0.0, max_value=(b_precio-b_abonado))
-                    if st.button("Abonar"):
+                    if st.button("ABONAR"):
                         nt = b_abonado + ma
                         ne = 'pagado' if (b_precio - nt) <= 0.01 else 'abonado'
                         run_query("UPDATE boletos SET total_abonado=%s, estado=%s WHERE id=%s", (nt, ne, b_id), fetch=False)
@@ -419,7 +419,7 @@ def main():
                 
                 # Acciones rápidas
                 c_a1, c_a2 = st.columns(2)
-                if estado != 'pagado' and c_a1.button("Marcar PAGADO"):
+                if estado != 'pagado' and c_a1.button("PAGADO"):
                     run_query("UPDATE boletos SET estado='pagado', total_abonado=%s WHERE id=%s", (b_precio, b_id), fetch=False)
                     run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle) VALUES (%s, 'MOVIL', 'PAGO', %s)", (id_sorteo, f"Pago {numero}"), fetch=False)
                     st.rerun()
@@ -447,13 +447,13 @@ def main():
                 nom_sel = st.selectbox("Cliente:", list(opc_cli.keys()))
                 abono = st.number_input("Abono Inicial", value=precio_s)
                 
-                if st.form_submit_button("VENDER"):
+                if st.form_submit_button("ASIGNAR"):
                     if nom_sel:
                         cid = opc_cli[nom_sel]
                         est = 'pagado' if abono >= precio_s else 'abonado'
                         if abono == 0: est = 'apartado'
                         run_query("INSERT INTO boletos (sorteo_id, numero, estado, precio, cliente_id, total_abonado, fecha_asignacion) VALUES (%s, %s, %s, %s, %s, %s, NOW())", (id_sorteo, numero, est, precio_s, cid, abono), fetch=False)
-                        st.success("Vendido"); time.sleep(1); st.rerun()
+                        st.success("Asignado"); time.sleep(1); st.rerun()
 
     # ---------------- PESTAÑA CLIENTES ----------------
     with tab_clientes:
@@ -504,3 +504,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
