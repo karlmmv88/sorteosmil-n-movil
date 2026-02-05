@@ -218,101 +218,156 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
     return buffer
 
 # ============================================================================
-#  3. MOTOR REPORTE VISUAL (Grilla JPG) - Idéntico a boletos.py
+#  MOTOR GRÁFICO: COPIA EXACTA DE BOLETOS.PY (PC)
 # ============================================================================
 def generar_imagen_reporte(id_sorteo, config_completa, cantidad_boletos, mostrar_ocupados=True):
-    # 1. Obtener estados
-    boletos_ocupados = {}
-    ocupados_raw = run_query("SELECT numero, estado FROM boletos WHERE sorteo_id = %s", (id_sorteo,))
-    if ocupados_raw:
-        boletos_ocupados = {row[0]: row[1] for row in ocupados_raw}
+    """
+    Genera una imagen de 4000x3000 píxeles IDÉNTICA al software de PC.
+    Usa la lógica de boletos.py línea por línea.
+    """
     
-    # 2. Configuración Dinámica (Clave para que se vea bien)
+    # 1. Configuración Geométrica (Exacta de PC)
+    # ---------------------------------------------------------
+    base_w = 4000
+    base_h = 3000
+    margin_px = 80
+    header_h = 450
+    
+    # Lógica de columnas/filas según cantidad (Igual que boletos.py)
     if cantidad_boletos <= 100:
-        cols_img = 10; rows_img = 10
-        base_w = 2000; base_h = 2500
-        font_s_title = 80; font_s_info = 40; font_s_num = 60
+        cols_img = 10
+        rows_img = 10
+        font_s_title = 80
+        font_s_info = 40
+        font_s_num = 60
     else:
-        cols_img = 25; rows_img = 40
-        base_w = 4000; base_h = 3000
-        font_s_title = 90; font_s_info = 42; font_s_num = 35
-
-    margin_px = 80; header_h = 450
+        cols_img = 25
+        rows_img = 40
+        font_s_title = 90
+        font_s_info = 42
+        font_s_num = 35
+    
+    # Cálculos de grilla
     grid_pw = base_w - (2 * margin_px)
     grid_ph = base_h - (2 * margin_px) - header_h
-    cell_pw = (grid_pw / cols_img) - 4
+    cell_pw = (grid_pw / cols_img) - 4  # Padding de 4px entre celdas
     cell_ph = (grid_ph / rows_img) - 4
-    
+
+    # 2. Lienzo y Fuentes
+    # ---------------------------------------------------------
     img = Image.new('RGB', (base_w, base_h), 'white')
     draw = ImageDraw.Draw(img)
     
-    # Fuentes (Fallback seguro)
+    # Intentamos cargar fuentes parecidas a Arial (PC)
+    # En servidores Linux (Streamlit) usamos DejaVuSans como equivalente
     try:
         font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", font_s_title)
         font_info = ImageFont.truetype("DejaVuSans.ttf", font_s_info)
         font_num = ImageFont.truetype("DejaVuSans-Bold.ttf", font_s_num)
     except:
+        # Fallback si no hay fuentes (no debería pasar en Streamlit Cloud)
         font_title = ImageFont.load_default()
         font_info = ImageFont.load_default()
         font_num = ImageFont.load_default()
-    
+
     rifa = config_completa['rifa']
+    empresa = config_completa['empresa']
+
+    # 3. Dibujar Encabezado (Coordenadas de PC)
+    # ---------------------------------------------------------
     
-    # Encabezado
+    # Título Centrado
     titulo = rifa['nombre'].upper()
-    draw.text((margin_px, 60), titulo, fill='#1a73e8', font=font_title)
+    # Truco para centrar texto
+    bbox = draw.textbbox((0, 0), titulo, font=font_title)
+    text_w = bbox[2] - bbox[0]
+    draw.text(((base_w - text_w)/2, 60), titulo, fill='#1a73e8', font=font_title)
     
+    # Columna Izquierda (Info)
     iy = 180
-    draw.text((margin_px, iy), f"📅 Fecha: {datetime.now().strftime('%d/%m/%Y')}", fill='#555', font=font_info)
+    # Fecha Actual
+    draw.text((margin_px, iy), f"📅 Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}", fill='#555', font=font_info)
     iy += 60
-    draw.text((margin_px, iy), f"🎲 Sorteo: {rifa.get('fecha_sorteo','')} {rifa.get('hora_sorteo','')}", fill='#388E3C', font=font_info)
+    # Fecha Sorteo
+    texto_sorteo = f"🎲 Sorteo: {rifa.get('fecha_sorteo','')} {rifa.get('hora_sorteo','')}"
+    draw.text((margin_px, iy), texto_sorteo, fill='#388E3C', font=font_info)
     iy += 60
-    draw.text((margin_px, iy), f"💵 Precio: ${rifa.get('precio_boleto',0)}", fill='#D32F2F', font=font_info)
+    # Precio
+    draw.text((margin_px, iy), f"💵 Costo del boleto: {rifa.get('precio_boleto',0)} $", fill='#D32F2F', font=font_info)
     
-    # Premios
-    px = base_w / 2 + 100
+    # Columna Derecha (Premios)
+    # En PC: px = base_w - margin_px - 900
+    px = base_w - margin_px - 900 
     py = 180
-    draw.text((px, py), "🏆 PREMIOS:", fill='#D32F2F', font=font_info)
+    draw.text((px, py), "🏆 PREMIOS", fill='#D32F2F', font=font_info)
     py += 60
     
+    premios = []
     keys = ["premio1", "premio2", "premio3", "premio_extra1", "premio_extra2"]
     lbls = ["1er:", "2do:", "3er:", "Ext:", "Ext:"]
     for k, l in zip(keys, lbls):
         val = rifa.get(k)
-        if val: 
-            draw.text((px, py), f"{l} {val}", fill='black', font=font_info)
-            py += 50
+        if val: premios.append(f"{l} {val}")
         
-    # Grilla
+    for p in premios:
+        draw.text((px, py), p, fill='black', font=font_info)
+        py += 50
+
+    # 4. Dibujar Grilla (Lógica de PC)
+    # ---------------------------------------------------------
+    
+    # Obtener estados de la BD
+    boletos_ocupados = {}
+    ocupados_raw = run_query("SELECT numero, estado FROM boletos WHERE sorteo_id = %s", (id_sorteo,))
+    if ocupados_raw:
+        boletos_ocupados = {row[0]: row[1] for row in ocupados_raw}
+        
     y_start = margin_px + header_h
+    
+    # Formato de números (00-99 o 000-999)
     fmt = "{:02d}" if cantidad_boletos <= 100 else "{:03d}"
 
     for i in range(cantidad_boletos):
         r = i // cols_img
         c = i % cols_img
+        
+        # Coordenadas exactas
         x = margin_px + (c * (cell_pw + 4))
         y = y_start + (r * (cell_ph + 4))
         
         estado = boletos_ocupados.get(i, 'disponible')
         ocupado = estado != 'disponible'
         
+        # --- LÓGICA DE COLORES DE REPORTES.PY ---
         bg_color = 'white'
         texto_visible = True
         
         if mostrar_ocupados:
-            if ocupado: bg_color = '#FFFF00'
+            # IMAGEN 1: Con Ocupados (Amarillo y Texto)
+            if ocupado: bg_color = '#FFFF00' # Amarillo
         else:
+            # IMAGEN 2: Solo Disponibles (Ocupados en Blanco SIN texto)
             if ocupado: texto_visible = False
         
+        # Dibujar Rectángulo (Borde negro ancho 3)
         draw.rectangle([x, y, x + cell_pw, y + cell_ph], fill=bg_color, outline='black', width=3)
         
+        # Dibujar Número Centrado
         if texto_visible:
             txt = fmt.format(i)
-            # Centrado manual aproximado (mejor que nada sin font metrics precisas)
-            draw.text((x + cell_pw*0.25, y + cell_ph*0.25), txt, fill='black', font=font_num)
             
+            # Centrado matemático del texto
+            bbox = draw.textbbox((0, 0), txt, font=font_num)
+            tw = bbox[2] - bbox[0]
+            th = bbox[3] - bbox[1]
+            tx = x + (cell_pw - tw) / 2
+            ty = y + (cell_ph - th) / 2
+            
+            draw.text((tx, ty), txt, fill='black', font=font_num)
+            
+    # 5. Guardar en Memoria
     buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=85)
+    img.save(buf, format="JPEG", quality=95) # Calidad alta
     buf.seek(0)
     return buf
 
@@ -392,18 +447,22 @@ def main():
     tab_venta, tab_clientes = st.tabs(["🎫 VENTA", "👥 CLIENTES"])
 
     # ---------------- PESTAÑA VENTA ----------------
-    with tab_venta:
-        # Generar Reportes Visuales
-        with st.expander("📷 IMÁGENES PARA PUBLICAR", expanded=False):
-            col_r1, col_r2 = st.columns(2)
-            if col_r1.button("Grilla Ocupados (Amarilla)"):
-                img = generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, True)
-                st.image(img); st.download_button("Descargar", img, "Ocupados.jpg", "image/jpeg")
-            if col_r2.button("Grilla Disponibles (Blanca)"):
-                img = generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, False)
-                st.image(img); st.download_button("Descargar", img, "Disponibles.jpg", "image/jpeg")
-        
-        st.divider()
+        # --- SECCIÓN: REPORTE VISUAL ---
+        with st.expander("📷 GENERAR REPORTE VISUAL (IMAGEN)", expanded=False):
+            st.info(f"Generando imagen de Alta Resolución (4000x3000px) para {cantidad_boletos} números.")
+            col_rep1, col_rep2 = st.columns(2)
+            
+            if col_rep1.button("1. Tabla Con Ocupados (Amarillo)"):
+                # True = Muestra los amarillos
+                img_bytes = generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, mostrar_ocupados=True)
+                st.image(img_bytes, caption="Vista Previa", use_container_width=True)
+                st.download_button("⬇️ Descargar JPG", img_bytes, "01_Tabla_ConOcupados.jpg", "image/jpeg")
+                
+            if col_rep2.button("2. Tabla Solo Disponibles (Blanca)"):
+                # False = Oculta los ocupados (deja huecos blancos)
+                img_bytes = generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, mostrar_ocupados=False)
+                st.image(img_bytes, caption="Vista Previa", use_container_width=True)
+                st.download_button("⬇️ Descargar JPG", img_bytes, "02_Tabla_SoloDisponibles.jpg", "image/jpeg")
             
         # --- CORRECCIÓN DE FORMATO (00 o 000) ---
         fmt_input = "%02d" if cantidad_boletos <= 100 else "%03d"
