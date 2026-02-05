@@ -629,17 +629,15 @@ def main():
                         del st.session_state.edit_id
                         st.success("Actualizado"); st.rerun()
 
-    # ---------------- PESTAÑA COBRANZA ----------------
+    # ---------------- PESTAÑA COBRANZA (AGRUPADA POR CLIENTE) ----------------
     with tab_cobranza:
         st.header("💸 Gestión de Cobranza")
         
-        # Botón para refrescar si alguien acaba de pagar
-        if st.button("🔄 Actualizar Lista de Deudores", use_container_width=True):
+        if st.button("🔄 Actualizar Lista", use_container_width=True):
             st.rerun()
             
-        # Consulta SQL para buscar deudores del sorteo actual
-        # (Precio - Abonado > 0.01) y que no estén disponibles
-        deudores = run_query("""
+        # 1. CONSULTA DE DEUDORES (Buscamos boletos con deuda > 0.01)
+        raw_deudores = run_query("""
             SELECT c.nombre_completo, c.telefono, b.numero, b.precio, b.total_abonado
             FROM boletos b
             JOIN clientes c ON b.cliente_id = c.id
@@ -649,48 +647,82 @@ def main():
             ORDER BY c.nombre_completo
         """, (id_sorteo,))
         
-        if not deudores:
+        if not raw_deudores:
             st.balloons()
             st.success("✅ ¡Excelente! No hay deudas pendientes en este sorteo.")
         else:
-            total_deuda = sum([(float(d[3]) - float(d[4])) for d in deudores])
-            st.metric("Total por Cobrar", f"${total_deuda:,.2f}", f"{len(deudores)} Clientes")
-            st.divider()
+            # 2. PROCESAMIENTO: AGRUPAR POR CLIENTE
+            # Estructura: { "Nombre|Tel": { datos... } }
+            grupos = {}
             
-            for row in deudores:
+            for row in raw_deudores:
                 nom, tel, num, prec, abon = row
-                prec = float(prec); abon = float(abon)
+                prec = float(prec or 0); abon = float(abon or 0)
                 deuda = prec - abon
                 
-                # Formato Boleto (2 o 3 dígitos)
-                fmt_num = "{:02d}" if cantidad_boletos <= 100 else "{:03d}"
-                num_str = fmt_num.format(num)
+                # Usamos Nombre+Tel como clave única
+                clave = f"{nom}|{tel}"
                 
-                # Tarjeta de Cliente
+                if clave not in grupos:
+                    grupos[clave] = {
+                        'nombre': nom, 'tel': tel, 'numeros': [],
+                        't_deuda': 0.0, 't_abono': 0.0, 't_precio': 0.0
+                    }
+                
+                grupos[clave]['numeros'].append(num)
+                grupos[clave]['t_deuda'] += deuda
+                grupos[clave]['t_abono'] += abon
+                grupos[clave]['t_precio'] += prec
+
+            # 3. MOSTRAR TOTALES GLOBALES
+            gran_total = sum(g['t_deuda'] for g in grupos.values())
+            st.metric("Total por Cobrar (Global)", f"${gran_total:,.2f}", f"{len(grupos)} Clientes Deudores")
+            st.divider()
+
+            # 4. RENDERIZAR TARJETAS POR CLIENTE
+            fmt_num = "{:02d}" if cantidad_boletos <= 100 else "{:03d}"
+            
+            for clave, d in grupos.items():
+                nom = d['nombre']
+                tel = d['tel']
+                lista_nums = sorted(d['numeros'])
+                
+                # Formatear lista de números (Ej: "05, 12, 20")
+                str_numeros = ", ".join([fmt_num.format(n) for n in lista_nums])
+                
                 with st.container(border=True):
-                    col_info, col_btn = st.columns([2, 1])
+                    c_info, c_btn = st.columns([2, 1])
                     
-                    with col_info:
+                    with c_info:
                         st.markdown(f"👤 **{nom}**")
-                        st.caption(f"🎫 Boleto: **{num_str}**")
-                        st.write(f"🔴 Deuda: :red[**${deuda:.2f}**]")
-                        st.caption(f"_(Abonó: ${abon:.2f} de ${prec:.2f})_")
-                    
-                    with col_btn:
-                        # Generar Link de WhatsApp
+                        # Muestra qué números tiene
+                        st.caption(f"🎟️ Boletos ({len(lista_nums)}): **{str_numeros}**")
+                        
+                        # Muestra Totales
+                        st.write(f"🔴 Deuda Total: :red[**${d['t_deuda']:,.2f}**]")
+                        
+                        # Si tiene abonos, los mostramos
+                        if d['t_abono'] > 0:
+                            st.caption(f"💰 (Abonó: ${d['t_abono']:,.2f} | Total: ${d['t_precio']:,.2f})")
+                        else:
+                            st.caption(f"💵 Total a pagar: ${d['t_precio']:,.2f}")
+
+                    with c_btn:
                         if tel and len(str(tel)) > 5:
-                            # Limpieza de teléfono
+                            # Preparar Link WhatsApp
                             tel_clean = "".join(filter(str.isdigit, str(tel)))
                             if len(tel_clean) == 10: tel_clean = "58" + tel_clean
                             elif len(tel_clean) == 11 and tel_clean.startswith("0"): tel_clean = "58" + tel_clean[1:]
                             
-                            # Mensaje de Cobro Amable
-                            msg = (f"Hola {nom}, saludos de Sorteos Milán. "
-                                   f"Te recordamos amablemente que tienes un saldo pendiente de ${deuda:.2f} "
-                                   f"por el boleto N° {num_str}. Agradecemos tu pago para completar el proceso. ¡Gracias!")
+                            # Mensaje Plural o Singular
+                            txt_concepto = "del boleto" if len(lista_nums) == 1 else "de los boletos"
                             
-                            link_wa = f"https://wa.me/{tel_clean}?text={urllib.parse.quote(msg)}"
-                            st.link_button("📲 Cobrar", link_wa, use_container_width=True)
+                            msg = (f"Hola {nom}, saludos de Sorteos Milán. "
+                                   f"Te recordamos amablemente que tienes un saldo pendiente de ${d['t_deuda']:.2f} "
+                                   f"por concepto {txt_concepto}: {str_numeros}. Agradecemos tu pago. ¡Gracias!")
+                            
+                            link = f"https://wa.me/{tel_clean}?text={urllib.parse.quote(msg)}"
+                            st.link_button("📲 Cobrar", link, use_container_width=True)
                         else:
                             st.warning("Sin Tel")
 
@@ -700,4 +732,5 @@ def main():
 if __name__ == "__main__":
     if check_password():
         main()
+
 
