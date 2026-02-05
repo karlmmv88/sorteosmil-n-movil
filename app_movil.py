@@ -341,8 +341,6 @@ def check_password():
 #  APP PRINCIPAL
 # ============================================================================
 def main():
-    def main():
-    # --- Pega esto justo aquí ---
     with st.sidebar:
         if st.button("🔒 Cerrar Sesión"):
             st.session_state["password_correct"] = False
