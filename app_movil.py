@@ -449,21 +449,21 @@ def main():
     # ---------------- PESTAÑA VENTA ----------------
         # --- SECCIÓN: REPORTE VISUAL ---
     with st.expander("📷 GENERAR REPORTE VISUAL (IMAGEN)", expanded=False):
-            st.info(f"Generando imagen de Alta Resolución (4000x3000px) para {cantidad_boletos} números.")
-            col_rep1, col_rep2 = st.columns(2)
+        st.info(f"Generando imagen de Alta Resolución (4000x3000px) para {cantidad_boletos} números.")
+        col_rep1, col_rep2 = st.columns(2)
+        
+        if col_rep1.button("1. Tabla Con Ocupados (Amarillo)"):
+            # True = Muestra los amarillos
+            img_bytes = generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, mostrar_ocupados=True)
+            st.image(img_bytes, caption="Vista Previa", use_container_width=True)
+            st.download_button("⬇️ Descargar JPG", img_bytes, "01_Tabla_ConOcupados.jpg", "image/jpeg")
             
-            if col_rep1.button("1. Tabla Con Ocupados (Amarillo)"):
-                # True = Muestra los amarillos
-                img_bytes = generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, mostrar_ocupados=True)
-                st.image(img_bytes, caption="Vista Previa", use_container_width=True)
-                st.download_button("⬇️ Descargar JPG", img_bytes, "01_Tabla_ConOcupados.jpg", "image/jpeg")
-                
-            if col_rep2.button("2. Tabla Solo Disponibles (Blanca)"):
-                # False = Oculta los ocupados (deja huecos blancos)
-                img_bytes = generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, mostrar_ocupados=False)
-                st.image(img_bytes, caption="Vista Previa", use_container_width=True)
-                st.download_button("⬇️ Descargar JPG", img_bytes, "02_Tabla_SoloDisponibles.jpg", "image/jpeg")
-            
+        if col_rep2.button("2. Tabla Solo Disponibles (Blanca)"):
+            # False = Oculta los ocupados (deja huecos blancos)
+            img_bytes = generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, mostrar_ocupados=False)
+            st.image(img_bytes, caption="Vista Previa", use_container_width=True)
+            st.download_button("⬇️ Descargar JPG", img_bytes, "02_Tabla_SoloDisponibles.jpg", "image/jpeg")
+        
         # --- CORRECCIÓN DE FORMATO (00 o 000) ---
         fmt_input = "%02d" if cantidad_boletos <= 100 else "%03d"
         
