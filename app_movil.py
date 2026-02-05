@@ -136,7 +136,15 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
     c.drawRightString(m_der, y-25, f"Emitido: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
     
     y -= 35; c.setStrokeColorRGB(0.70, 0.55, 0.35); c.line(m_izq, y, m_der, y)
-    y -= 18; c.setFont("Helvetica-Bold", 15); c.drawCentredString(centro, y, "COMPROBANTE DE SORTEO")
+    
+    y -= 18; c.setFont("Helvetica-Bold", 15)
+    
+    # --- CAMBIO DE COLOR (Dorado) ---
+    c.setFillColorRGB(0.70, 0.55, 0.35) 
+    c.drawCentredString(centro, y, "COMPROBANTE DE SORTEO")
+    c.setFillColorRGB(0, 0, 0) # Volver a negro para lo demás
+    # -------------------------------
+    
     y -= 8; c.line(m_izq, y, m_der, y)
     
     # Datos Sorteo
