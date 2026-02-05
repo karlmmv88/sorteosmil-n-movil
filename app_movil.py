@@ -441,8 +441,8 @@ def main():
     }
     config_full = {'rifa': rifa_config, 'empresa': empresa_config}
     
-    # CREACIÓN DE PESTAÑAS
-    tab_venta, tab_clientes = st.tabs(["🎫 VENTA", "👥 CLIENTES"])
+    # CREACIÓN DE PESTAÑAS (Agregamos COBRANZA)
+    tab_venta, tab_clientes, tab_cobranza = st.tabs(["🎫 VENTA", "👥 CLIENTES", "💰 COBRANZA"])
 
     # ---------------- PESTAÑA VENTA ----------------
     with tab_venta:
@@ -628,6 +628,71 @@ def main():
                         run_query("UPDATE clientes SET nombre_completo=%s, cedula=%s, telefono=%s, direccion=%s WHERE id=%s", (en, ec, et, ed, id_e), fetch=False)
                         del st.session_state.edit_id
                         st.success("Actualizado"); st.rerun()
+
+    # ---------------- PESTAÑA COBRANZA ----------------
+    with tab_cobranza:
+        st.header("💸 Gestión de Cobranza")
+        
+        # Botón para refrescar si alguien acaba de pagar
+        if st.button("🔄 Actualizar Lista de Deudores", use_container_width=True):
+            st.rerun()
+            
+        # Consulta SQL para buscar deudores del sorteo actual
+        # (Precio - Abonado > 0.01) y que no estén disponibles
+        deudores = run_query("""
+            SELECT c.nombre_completo, c.telefono, b.numero, b.precio, b.total_abonado
+            FROM boletos b
+            JOIN clientes c ON b.cliente_id = c.id
+            WHERE b.sorteo_id = %s
+              AND (b.precio - b.total_abonado) > 0.01 
+              AND b.estado != 'disponible'
+            ORDER BY c.nombre_completo
+        """, (id_sorteo,))
+        
+        if not deudores:
+            st.balloons()
+            st.success("✅ ¡Excelente! No hay deudas pendientes en este sorteo.")
+        else:
+            total_deuda = sum([(float(d[3]) - float(d[4])) for d in deudores])
+            st.metric("Total por Cobrar", f"${total_deuda:,.2f}", f"{len(deudores)} Clientes")
+            st.divider()
+            
+            for row in deudores:
+                nom, tel, num, prec, abon = row
+                prec = float(prec); abon = float(abon)
+                deuda = prec - abon
+                
+                # Formato Boleto (2 o 3 dígitos)
+                fmt_num = "{:02d}" if cantidad_boletos <= 100 else "{:03d}"
+                num_str = fmt_num.format(num)
+                
+                # Tarjeta de Cliente
+                with st.container(border=True):
+                    col_info, col_btn = st.columns([2, 1])
+                    
+                    with col_info:
+                        st.markdown(f"👤 **{nom}**")
+                        st.caption(f"🎫 Boleto: **{num_str}**")
+                        st.write(f"🔴 Deuda: :red[**${deuda:.2f}**]")
+                        st.caption(f"_(Abonó: ${abon:.2f} de ${prec:.2f})_")
+                    
+                    with col_btn:
+                        # Generar Link de WhatsApp
+                        if tel and len(str(tel)) > 5:
+                            # Limpieza de teléfono
+                            tel_clean = "".join(filter(str.isdigit, str(tel)))
+                            if len(tel_clean) == 10: tel_clean = "58" + tel_clean
+                            elif len(tel_clean) == 11 and tel_clean.startswith("0"): tel_clean = "58" + tel_clean[1:]
+                            
+                            # Mensaje de Cobro Amable
+                            msg = (f"Hola {nom}, saludos de Sorteos Milán. "
+                                   f"Te recordamos amablemente que tienes un saldo pendiente de ${deuda:.2f} "
+                                   f"por el boleto N° {num_str}. Agradecemos tu pago para completar el proceso. ¡Gracias!")
+                            
+                            link_wa = f"https://wa.me/{tel_clean}?text={urllib.parse.quote(msg)}"
+                            st.link_button("📲 Cobrar", link_wa, use_container_width=True)
+                        else:
+                            st.warning("Sin Tel")
 
 # ============================================================================
 #  PUNTO DE ENTRADA (CON LOGIN)
