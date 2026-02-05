@@ -317,9 +317,37 @@ def generar_imagen_reporte(id_sorteo, config_completa, cantidad_boletos, mostrar
     return buf
 
 # ============================================================================
+#  SISTEMA DE LOGIN
+# ============================================================================
+def check_password():
+    """Retorna True si el usuario ingresó la clave correcta."""
+    if st.session_state.get("password_correct", False):
+        return True
+
+    st.markdown("### 🔐 Acceso Restringido")
+    pwd_input = st.text_input("Ingresa la contraseña:", type="password")
+    
+    if st.button("Entrar"):
+        # Usa la clave de los Secrets o "admin123" por defecto si no existe
+        clave_secreta = st.secrets.get("PASSWORD_APP", "admin123")
+        if pwd_input == clave_secreta:
+            st.session_state["password_correct"] = True
+            st.rerun()
+        else:
+            st.error("❌ Contraseña incorrecta")
+    return False
+
+# ============================================================================
 #  APP PRINCIPAL
 # ============================================================================
 def main():
+    def main():
+    # --- Pega esto justo aquí ---
+    with st.sidebar:
+        if st.button("🔒 Cerrar Sesión"):
+            st.session_state["password_correct"] = False
+            st.rerun()
+
     st.title("📱 Sorteos Milán")
 
     # Cargar Datos Generales
@@ -406,35 +434,41 @@ def main():
             c_est[2].metric("Deuda", f"${b_precio-b_abonado}")
             
             # Botones gestión
-            with st.expander("Opciones", expanded=True):
-                # Abonar
-                if (b_precio - b_abonado) > 0:
-                    ma = st.number_input("Monto Abono", min_value=0.0, max_value=(b_precio-b_abonado))
-                    if st.button("ABONAR"):
+            with st.expander("🛠️ Opciones de Gestión", expanded=True):
+
+                # --- SECCIÓN 1: ABONOS (Solo si hay deuda) ---
+                if (b_precio - b_abonado) > 0.01: # Usamos 0.01 para evitar problemas de decimales
+                    ma = st.number_input("Monto Abono ($)", min_value=0.0, max_value=(b_precio-b_abonado))
+                    if st.button("💸 REGISTRAR ABONO", use_container_width=True):
                         nt = b_abonado + ma
                         ne = 'pagado' if (b_precio - nt) <= 0.01 else 'abonado'
                         run_query("UPDATE boletos SET total_abonado=%s, estado=%s WHERE id=%s", (nt, ne, b_id), fetch=False)
                         run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle, monto) VALUES (%s, 'MOVIL', 'ABONO', %s, %s)", (id_sorteo, f"Abono {numero}", ma), fetch=False)
                         st.success("Abonado"); time.sleep(1); st.rerun()
                 
-                # Acciones rápidas
-                st.write("Cambiar Estado:")
-                col_rap1, col_rap2, col_rap3 = st.columns(3)
+                st.divider() # Línea separadora visual
                 
-                # 1. Botón APARTADO (Nuevo)
-                if estado != 'apartado' and col_rap1.button("🟡 APARTADO"):
-                    run_query("UPDATE boletos SET estado='apartado', total_abonado=0 WHERE id=%s", (b_id,), fetch=False)
-                    run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle) VALUES (%s, 'MOVIL', 'APARTADO', %s)", (id_sorteo, f"Marcado apartado {numero}"), fetch=False)
-                    st.rerun()
+                # --- SECCIÓN 2: CAMBIO DE ESTADO (Siempre visible) ---
+                st.caption("Cambiar Estado del Boleto:")
+                c_btn1, c_btn2, c_btn3 = st.columns(3)
+                
+                # 1. Botón APARTADO (Visible si NO es apartado, o sea en Pagado/Abonado)
+                if estado != 'apartado': 
+                    if c_btn1.button("🟡 APARTADO", use_container_width=True):
+                        # Al apartar, reiniciamos el abono a 0
+                        run_query("UPDATE boletos SET estado='apartado', total_abonado=0 WHERE id=%s", (b_id,), fetch=False)
+                        run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle) VALUES (%s, 'MOVIL', 'REVERTIR_APARTADO', %s)", (id_sorteo, f"Marcado como apartado {numero}"), fetch=False)
+                        st.rerun()
 
-                # 2. Botón PAGADO (Existente, movido a columna 2)
-                if estado != 'pagado' and col_rap2.button("✅ PAGADO"):
-                    run_query("UPDATE boletos SET estado='pagado', total_abonado=%s WHERE id=%s", (b_precio, b_id), fetch=False)
-                    run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle) VALUES (%s, 'MOVIL', 'PAGO_COMPLETO', %s)", (id_sorteo, f"Pago total boleto {numero}"), fetch=False)
-                    st.rerun()
+                # 2. Botón PAGADO (Visible si NO es pagado)
+                if estado != 'pagado':
+                    if c_btn2.button("✅ PAGADO", use_container_width=True):
+                        run_query("UPDATE boletos SET estado='pagado', total_abonado=%s WHERE id=%s", (b_precio, b_id), fetch=False)
+                        run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle) VALUES (%s, 'MOVIL', 'PAGO_COMPLETO', %s)", (id_sorteo, f"Pago total boleto {numero}"), fetch=False)
+                        st.rerun()
                 
-                # 3. Botón LIBERAR (Existente, movido a columna 3)
-                if col_rap3.button("🗑️ LIBERAR"):
+                # 3. Botón LIBERAR (Siempre visible)
+                if c_btn3.button("🗑️ LIBERAR", use_container_width=True):
                     run_query("DELETE FROM boletos WHERE id=%s", (b_id,), fetch=False)
                     run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle) VALUES (%s, 'MOVIL', 'LIBERAR', %s)", (id_sorteo, f"Liberado boleto {numero}"), fetch=False)
                     st.warning("Boleto liberado."); time.sleep(1); st.rerun()
@@ -460,7 +494,7 @@ def main():
                 nom_archivo = "Cliente"
             
             # 3. Nombre Final: XX_Juan Perez_(pagado).pdf
-            nombre_final_pdf = f"{num_file}_{nom_archivo}_({estado}).pdf"
+            nombre_final_pdf = f"{num_file}_{nom_archivo}_({estado.upper()}).pdf"
 
             c_share1, c_share2 = st.columns(2)
             c_share1.download_button("📄 PDF", pdf_bytes, nombre_final_pdf, "application/pdf", use_container_width=True)
@@ -533,6 +567,5 @@ def main():
                         st.success("Actualizado"); st.rerun()
 
 if __name__ == "__main__":
-    main()
-
-
+    if check_password():
+        main()
