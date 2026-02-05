@@ -437,23 +437,33 @@ def main():
     tab_venta, tab_clientes = st.tabs(["🎫 VENTA", "👥 CLIENTES"])
 
     # ---------------- PESTAÑA VENTA ----------------
-    with tab_venta:  # <--- ¡ESTA LÍNEA ES LA QUE FALTABA!
-        # Generar Reportes Visuales
-        with st.expander("📷 IMÁGENES PARA PUBLICAR", expanded=False):
-            st.info(f"Generando imagen de Alta Resolución (4000x3000px) para {cantidad_boletos} números.")
-            col_r1, col_r2 = st.columns(2)
-            if col_r1.button("Grilla Ocupados (Amarilla)"):
-                img = generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, True)
-                st.image(img, use_container_width=True)
-                st.download_button("Descargar", img, "Ocupados.jpg", "image/jpeg")
-            if col_r2.button("Grilla Disponibles (Blanca)"):
-                img = generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, False)
-                st.image(img, use_container_width=True)
-                st.download_button("Descargar", img, "Disponibles.jpg", "image/jpeg")
+    with tab_venta:
+        # --- SECCIÓN: VISUALIZACIÓN EN VIVO ---
+        st.write("### 📊 Estado del Sorteo")
         
-        st.divider()
+        # Interruptor simple para cambiar de vista (Por defecto activado = Amarillo)
+        ver_ocupados = st.checkbox("Mostrar Ocupados (Amarillo)", value=True)
         
-        # Buscador y Venta
+        # 1. Generar la imagen automáticamente en cada carga
+        # (Esto asegura que siempre esté actualizada con la base de datos)
+        img_bytes = generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, mostrar_ocupados=ver_ocupados)
+        
+        # 2. Mostrar la imagen en pantalla
+        st.image(img_bytes, caption="Actualizado en tiempo real", use_container_width=True)
+        
+        # 3. Botón de descarga justo debajo
+        nombre_archivo = "Tabla_ConOcupados.jpg" if ver_ocupados else "Tabla_Limpia.jpg"
+        st.download_button(
+            label="⬇️ DESCARGAR ESTA IMAGEN",
+            data=img_bytes,
+            file_name=nombre_archivo,
+            mime="image/jpeg",
+            use_container_width=True
+        )
+        
+        st.divider() # Separador visual
+        
+        # --- BUSCADOR Y VENTA (Código Original) ---
         fmt_input = "%02d" if cantidad_boletos <= 100 else "%03d"
         c1, c2 = st.columns([2,1])
         numero = c1.number_input("Boleto N°:", min_value=0, max_value=cantidad_boletos-1, step=1, format=fmt_input)
