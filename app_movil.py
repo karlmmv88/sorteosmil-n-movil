@@ -422,7 +422,7 @@ def main():
     s_data = opciones_sorteo[nom_sorteo]
     id_sorteo, nombre_s, precio_s, fecha_s = s_data[0], s_data[1], float(s_data[2] or 0), s_data[3]
     
-    # 🔥 DETECCIÓN AUTOMÁTICA DE CANTIDAD (Para saber si usar 2 o 3 dígitos)
+    # 🔥 DETECCIÓN AUTOMÁTICA DE CANTIDAD
     cantidad_boletos = 1000
     if config_rows:
         cfg_dict = {r[0]: r[1] for r in config_rows}
@@ -430,12 +430,11 @@ def main():
         if clave_cap in cfg_dict:
             cantidad_boletos = int(cfg_dict[clave_cap])
         else:
-            # Si no hay config, deducir por el boleto más alto
             max_bol = run_query("SELECT MAX(numero) FROM boletos WHERE sorteo_id=%s", (id_sorteo,))
             if max_bol and max_bol[0][0] is not None and max_bol[0][0] <= 99:
                 cantidad_boletos = 100
     
-    st.caption(f"⚙️ Modo: {cantidad_boletos} boletos (Formato: {'00' if cantidad_boletos<=100 else '000'})")
+    st.caption(f"⚙️ Modo: {cantidad_boletos} boletos")
 
     # Objeto Rifa Global
     rifa_config = {
@@ -444,29 +443,28 @@ def main():
     }
     config_full = {'rifa': rifa_config, 'empresa': empresa_config}
     
+    # CREACIÓN DE PESTAÑAS
     tab_venta, tab_clientes = st.tabs(["🎫 VENTA", "👥 CLIENTES"])
 
     # ---------------- PESTAÑA VENTA ----------------
-        # --- SECCIÓN: REPORTE VISUAL ---
-    with st.expander("📷 GENERAR REPORTE VISUAL (IMAGEN)", expanded=False):
-        st.info(f"Generando imagen de Alta Resolución (4000x3000px) para {cantidad_boletos} números.")
-        col_rep1, col_rep2 = st.columns(2)
+    with tab_venta:  # <--- ¡ESTA LÍNEA ES LA QUE FALTABA!
+        # Generar Reportes Visuales
+        with st.expander("📷 IMÁGENES PARA PUBLICAR", expanded=False):
+            st.info(f"Generando imagen de Alta Resolución (4000x3000px) para {cantidad_boletos} números.")
+            col_r1, col_r2 = st.columns(2)
+            if col_r1.button("Grilla Ocupados (Amarilla)"):
+                img = generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, True)
+                st.image(img, use_container_width=True)
+                st.download_button("Descargar", img, "Ocupados.jpg", "image/jpeg")
+            if col_r2.button("Grilla Disponibles (Blanca)"):
+                img = generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, False)
+                st.image(img, use_container_width=True)
+                st.download_button("Descargar", img, "Disponibles.jpg", "image/jpeg")
         
-        if col_rep1.button("1. Tabla Con Ocupados (Amarillo)"):
-            # True = Muestra los amarillos
-            img_bytes = generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, mostrar_ocupados=True)
-            st.image(img_bytes, caption="Vista Previa", use_container_width=True)
-            st.download_button("⬇️ Descargar JPG", img_bytes, "01_Tabla_ConOcupados.jpg", "image/jpeg")
-            
-        if col_rep2.button("2. Tabla Solo Disponibles (Blanca)"):
-            # False = Oculta los ocupados (deja huecos blancos)
-            img_bytes = generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, mostrar_ocupados=False)
-            st.image(img_bytes, caption="Vista Previa", use_container_width=True)
-            st.download_button("⬇️ Descargar JPG", img_bytes, "02_Tabla_SoloDisponibles.jpg", "image/jpeg")
+        st.divider()
         
-        # --- CORRECCIÓN DE FORMATO (00 o 000) ---
+        # Buscador y Venta
         fmt_input = "%02d" if cantidad_boletos <= 100 else "%03d"
-        
         c1, c2 = st.columns([2,1])
         numero = c1.number_input("Boleto N°:", min_value=0, max_value=cantidad_boletos-1, step=1, format=fmt_input)
         if c2.button("🔍 Buscar", use_container_width=True): pass
@@ -494,9 +492,8 @@ def main():
             
             # Botones gestión
             with st.expander("🛠️ Opciones de Gestión", expanded=True):
-
-                # --- SECCIÓN 1: ABONOS (Solo si hay deuda) ---
-                if (b_precio - b_abonado) > 0.01: # Usamos 0.01 para evitar problemas de decimales
+                # --- SECCIÓN 1: ABONOS ---
+                if (b_precio - b_abonado) > 0.01:
                     ma = st.number_input("Monto Abono ($)", min_value=0.0, max_value=(b_precio-b_abonado))
                     if st.button("💸 REGISTRAR ABONO", use_container_width=True):
                         nt = b_abonado + ma
@@ -505,28 +502,24 @@ def main():
                         run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle, monto) VALUES (%s, 'MOVIL', 'ABONO', %s, %s)", (id_sorteo, f"Abono {numero}", ma), fetch=False)
                         st.success("Abonado"); time.sleep(1); st.rerun()
                 
-                st.divider() # Línea separadora visual
+                st.divider()
                 
-                # --- SECCIÓN 2: CAMBIO DE ESTADO (Siempre visible) ---
+                # --- SECCIÓN 2: CAMBIO DE ESTADO ---
                 st.caption("Cambiar Estado del Boleto:")
                 c_btn1, c_btn2, c_btn3 = st.columns(3)
                 
-                # 1. Botón APARTADO (Visible si NO es apartado, o sea en Pagado/Abonado)
                 if estado != 'apartado': 
                     if c_btn1.button("🟡 APARTADO", use_container_width=True):
-                        # Al apartar, reiniciamos el abono a 0
                         run_query("UPDATE boletos SET estado='apartado', total_abonado=0 WHERE id=%s", (b_id,), fetch=False)
                         run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle) VALUES (%s, 'MOVIL', 'REVERTIR_APARTADO', %s)", (id_sorteo, f"Marcado como apartado {numero}"), fetch=False)
                         st.rerun()
 
-                # 2. Botón PAGADO (Visible si NO es pagado)
                 if estado != 'pagado':
                     if c_btn2.button("✅ PAGADO", use_container_width=True):
                         run_query("UPDATE boletos SET estado='pagado', total_abonado=%s WHERE id=%s", (b_precio, b_id), fetch=False)
                         run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle) VALUES (%s, 'MOVIL', 'PAGO_COMPLETO', %s)", (id_sorteo, f"Pago total boleto {numero}"), fetch=False)
                         st.rerun()
                 
-                # 3. Botón LIBERAR (Siempre visible)
                 if c_btn3.button("🗑️ LIBERAR", use_container_width=True):
                     run_query("DELETE FROM boletos WHERE id=%s", (b_id,), fetch=False)
                     run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle) VALUES (%s, 'MOVIL', 'LIBERAR', %s)", (id_sorteo, f"Liberado boleto {numero}"), fetch=False)
@@ -538,85 +531,95 @@ def main():
             
             pdf_bytes = generar_pdf_memoria(numero, datos_pdf, config_full, cantidad_boletos)
             
-            # --- CONSTRUCCIÓN DEL NOMBRE DEL ARCHIVO ---
-            # 1. Formato de número (01 o 001)
+            # Nombre PDF dinámico
             fmt_file = "{:02d}" if cantidad_boletos <= 100 else "{:03d}"
             num_file = fmt_file.format(numero)
-            
-            # 2. Obtener Primer Nombre y Primer Apellido
             partes_nom = c_nom.strip().split()
-            if len(partes_nom) >= 2:
-                nom_archivo = f"{partes_nom[0]} {partes_nom[1]}"
-            elif len(partes_nom) == 1:
-                nom_archivo = partes_nom[0]
-            else:
-                nom_archivo = "Cliente"
-            
-            # 3. Nombre Final: XX_Juan Perez_(pagado).pdf
+            nom_archivo = f"{partes_nom[0]} {partes_nom[1]}" if len(partes_nom) >= 2 else (partes_nom[0] if partes_nom else "Cliente")
             nombre_final_pdf = f"{num_file}_{nom_archivo}_({estado.upper()}).pdf"
 
             c_share1, c_share2 = st.columns(2)
             c_share1.download_button("📄 PDF", pdf_bytes, nombre_final_pdf, "application/pdf", use_container_width=True)
-
+            
             link = get_whatsapp_link_exacto(c_tel, numero, estado, c_nom, nombre_s, str(fecha_s), cantidad_boletos)
             c_share2.link_button("📲 WhatsApp", link, use_container_width=True)
             
         else:
-            # --- BOLETO DISPONIBLE (ZONA DE VENTA) ---
-            st.success(f"🟢 El boleto {numero} está DISPONIBLE")
-            
+            # DISPONIBLE
+            st.success("🟢 Boleto DISPONIBLE")
             with st.form("venta"):
                 st.write("### 📝 Asignar Boleto")
-                
-                # 1. Cargar Clientes CON CÓDIGO para poder buscar
                 clientes = run_query("SELECT id, nombre_completo, codigo FROM clientes ORDER BY nombre_completo")
                 
                 opc_cli = {}
                 if clientes:
                     for c in clientes:
-                        # Formato: "JUAN PEREZ | 095123"
-                        # Esto permite que si escribes el código, aparezca el cliente
                         codigo_display = c[2] if c[2] else "S/C"
                         etiqueta = f"{c[1]} | {codigo_display}"
                         opc_cli[etiqueta] = c[0]
                 
-                # 2. Selector Inteligente (Busca por lo que escribas)
-                nom_sel = st.selectbox(
-                    "👤 Buscar Cliente (Escribe Nombre o Código):", 
-                    options=list(opc_cli.keys()),
-                    index=None,
-                    placeholder="Escribe aquí para filtrar..."
-                )
+                nom_sel = st.selectbox("👤 Buscar Cliente:", options=list(opc_cli.keys()), index=None, placeholder="Escribe para buscar...")
                 
                 c_abono, c_precio = st.columns(2)
                 abono = c_abono.number_input("Abono Inicial ($)", value=precio_s, min_value=0.0)
                 c_precio.metric("Precio Boleto", f"${precio_s}")
                 
-                if st.form_submit_button("💾 Asignar boleto", use_container_width=True):
+                if st.form_submit_button("💾 REGISTRAR VENTA", use_container_width=True):
                     if nom_sel:
                         cid = opc_cli[nom_sel]
-                        # Lógica de Estado
                         est = 'pagado' if abono >= precio_s else 'abonado'
                         if abono == 0: est = 'apartado'
-                        
-                        # Guardar
-                        run_query("""
-                            INSERT INTO boletos (sorteo_id, numero, estado, precio, cliente_id, total_abonado, fecha_asignacion) 
-                            VALUES (%s, %s, %s, %s, %s, %s, NOW())
-                        """, (id_sorteo, numero, est, precio_s, cid, abono), fetch=False)
-                        
-                        # Historial
-                        run_query("""
-                            INSERT INTO historial (sorteo_id, usuario, accion, detalle, monto) 
-                            VALUES (%s, 'MOVIL', 'VENTA', %s, %s)
-                        """, (id_sorteo, f"Venta boleto {numero}", abono), fetch=False)
-                        
-                        st.balloons()
-                        st.success("✅ ¡Boleto asignado!")
-                        time.sleep(1)
-                        st.rerun()
-                    else:
-                        st.error("⚠️ Por favor selecciona un cliente de la lista.")
+                        run_query("INSERT INTO boletos (sorteo_id, numero, estado, precio, cliente_id, total_abonado, fecha_asignacion) VALUES (%s, %s, %s, %s, %s, %s, NOW())", (id_sorteo, numero, est, precio_s, cid, abono), fetch=False)
+                        run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle, monto) VALUES (%s, 'MOVIL', 'VENTA', %s, %s)", (id_sorteo, f"Venta boleto {numero}", abono), fetch=False)
+                        st.balloons(); st.success("✅ Venta Exitosa"); time.sleep(1); st.rerun()
+                    else: st.error("⚠️ Selecciona un cliente.")
+
+    # ---------------- PESTAÑA CLIENTES ----------------
+    with tab_clientes: # <--- ¡ESTO TAMBIÉN FALTABA!
+        st.header("Gestión Clientes")
+        with st.expander("Nuevo Cliente"):
+            with st.form("new_cli"):
+                nn = st.text_input("Nombre").upper()
+                nc = st.text_input("Cédula")
+                nt = st.text_input("Teléfono")
+                nd = st.text_input("Dirección")
+                if st.form_submit_button("Guardar"):
+                    if nn and nt:
+                        cod = datetime.now().strftime("%H%M%S")
+                        run_query("INSERT INTO clientes (codigo, nombre_completo, cedula, telefono, direccion, fecha_registro) VALUES (%s, %s, %s, %s, %s, NOW())", (cod, nn, nc, nt, nd), fetch=False)
+                        st.success("Guardado"); st.rerun()
+                    else: st.error("Faltan datos")
+        
+        # Lista y Edición
+        q = st.text_input("Buscar cliente...")
+        sql = "SELECT id, nombre_completo, cedula, telefono, direccion FROM clientes"
+        if q: sql += f" WHERE nombre_completo ILIKE '%{q}%' OR cedula ILIKE '%{q}%'"
+        sql += " ORDER BY id DESC LIMIT 15"
+        res = run_query(sql)
+        
+        if res:
+            for c in res:
+                with st.container(border=True):
+                    c1, c2 = st.columns([3,1])
+                    c1.write(f"**{c[1]}**\n🆔 {c[2]} | 📞 {c[3]} | 📍 {c[4]}")
+                    if c2.button("Editar", key=c[0]):
+                        st.session_state.edit_id = c[0]
+                        st.session_state.edit_vals = c
+            
+            if 'edit_id' in st.session_state:
+                id_e = st.session_state.edit_id
+                vals = st.session_state.edit_vals
+                st.markdown("---")
+                st.write(f"Editando: {vals[1]}")
+                with st.form("edit_cli"):
+                    en = st.text_input("Nombre", value=vals[1])
+                    ec = st.text_input("Cédula", value=vals[2])
+                    et = st.text_input("Teléfono", value=vals[3])
+                    ed = st.text_input("Dirección", value=vals[4])
+                    if st.form_submit_button("Guardar Cambios"):
+                        run_query("UPDATE clientes SET nombre_completo=%s, cedula=%s, telefono=%s, direccion=%s WHERE id=%s", (en, ec, et, ed, id_e), fetch=False)
+                        del st.session_state.edit_id
+                        st.success("Actualizado"); st.rerun()
 
 # ============================================================================
 #  PUNTO DE ENTRADA (CON LOGIN)
@@ -624,3 +627,4 @@ def main():
 if __name__ == "__main__":
     if check_password():
         main()
+
