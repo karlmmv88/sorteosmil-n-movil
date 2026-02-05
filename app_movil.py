@@ -418,23 +418,53 @@ def main():
                         st.success("Abonado"); time.sleep(1); st.rerun()
                 
                 # Acciones rápidas
-                c_a1, c_a2 = st.columns(2)
-                if estado != 'pagado' and c_a1.button("PAGADO"):
+                st.write("Cambiar Estado:")
+                col_rap1, col_rap2, col_rap3 = st.columns(3)
+                
+                # 1. Botón APARTADO (Nuevo)
+                if estado != 'apartado' and col_rap1.button("🟡 APARTADO"):
+                    run_query("UPDATE boletos SET estado='apartado', total_abonado=0 WHERE id=%s", (b_id,), fetch=False)
+                    run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle) VALUES (%s, 'MOVIL', 'APARTADO', %s)", (id_sorteo, f"Marcado apartado {numero}"), fetch=False)
+                    st.rerun()
+
+                # 2. Botón PAGADO (Existente, movido a columna 2)
+                if estado != 'pagado' and col_rap2.button("✅ PAGADO"):
                     run_query("UPDATE boletos SET estado='pagado', total_abonado=%s WHERE id=%s", (b_precio, b_id), fetch=False)
-                    run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle) VALUES (%s, 'MOVIL', 'PAGO', %s)", (id_sorteo, f"Pago {numero}"), fetch=False)
+                    run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle) VALUES (%s, 'MOVIL', 'PAGO_COMPLETO', %s)", (id_sorteo, f"Pago total boleto {numero}"), fetch=False)
                     st.rerun()
-                if c_a2.button("LIBERAR"):
+                
+                # 3. Botón LIBERAR (Existente, movido a columna 3)
+                if col_rap3.button("🗑️ LIBERAR"):
                     run_query("DELETE FROM boletos WHERE id=%s", (b_id,), fetch=False)
-                    st.rerun()
+                    run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle) VALUES (%s, 'MOVIL', 'LIBERAR', %s)", (id_sorteo, f"Liberado boleto {numero}"), fetch=False)
+                    st.warning("Boleto liberado."); time.sleep(1); st.rerun()
             
             # PDF y WhatsApp
             st.divider()
             datos_pdf = {'cliente': c_nom, 'cedula': c_ced, 'telefono': c_tel, 'direccion': c_dir, 'codigo_cli': c_cod, 'estado': estado, 'precio': b_precio, 'abonado': b_abonado, 'fecha_asignacion': b_fecha}
             
             pdf_bytes = generar_pdf_memoria(numero, datos_pdf, config_full, cantidad_boletos)
-            c_share1, c_share2 = st.columns(2)
-            c_share1.download_button("📄 PDF", pdf_bytes, f"Boleto_{numero}.pdf", "application/pdf", use_container_width=True)
             
+            # --- CONSTRUCCIÓN DEL NOMBRE DEL ARCHIVO ---
+            # 1. Formato de número (01 o 001)
+            fmt_file = "{:02d}" if cantidad_boletos <= 100 else "{:03d}"
+            num_file = fmt_file.format(numero)
+            
+            # 2. Obtener Primer Nombre y Primer Apellido
+            partes_nom = c_nom.strip().split()
+            if len(partes_nom) >= 2:
+                nom_archivo = f"{partes_nom[0]} {partes_nom[1]}"
+            elif len(partes_nom) == 1:
+                nom_archivo = partes_nom[0]
+            else:
+                nom_archivo = "Cliente"
+            
+            # 3. Nombre Final: XX_Juan Perez_(pagado).pdf
+            nombre_final_pdf = f"{num_file}_{nom_archivo}_({estado}).pdf"
+
+            c_share1, c_share2 = st.columns(2)
+            c_share1.download_button("📄 PDF", pdf_bytes, nombre_final_pdf, "application/pdf", use_container_width=True)
+
             link = get_whatsapp_link_exacto(c_tel, numero, estado, c_nom, nombre_s, str(fecha_s), cantidad_boletos)
             c_share2.link_button("📲 WhatsApp", link, use_container_width=True)
             
@@ -504,4 +534,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
