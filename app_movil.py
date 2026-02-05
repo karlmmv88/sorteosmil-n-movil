@@ -533,7 +533,7 @@ def main():
                 abono = c_abono.number_input("Abono Inicial ($)", value=precio_s, min_value=0.0)
                 c_precio.metric("Precio Boleto", f"${precio_s}")
                 
-                if st.form_submit_button("💾 REGISTRAR VENTA", use_container_width=True):
+                if st.form_submit_button("💾 Asignar boleto", use_container_width=True):
                     if nom_sel:
                         cid = opc_cli[nom_sel]
                         # Lógica de Estado
@@ -553,7 +553,7 @@ def main():
                         """, (id_sorteo, f"Venta boleto {numero}", abono), fetch=False)
                         
                         st.balloons()
-                        st.success("✅ ¡Venta Exitosa!")
+                        st.success("✅ ¡Boleto asignado!")
                         time.sleep(1)
                         st.rerun()
                     else:
