@@ -404,10 +404,12 @@ def main():
                 st.image(img); st.download_button("Descargar", img, "Disponibles.jpg", "image/jpeg")
         
         st.divider()
+            
+        # --- CORRECCIÓN DE FORMATO (00 o 000) ---
+        fmt_input = "%02d" if cantidad_boletos <= 100 else "%03d"
         
-        # Buscador y Venta
         c1, c2 = st.columns([2,1])
-        numero = c1.number_input("Boleto N°:", min_value=0, max_value=cantidad_boletos-1, step=1)
+        numero = c1.number_input("Boleto N°:", min_value=0, max_value=cantidad_boletos-1, step=1, format=fmt_input)
         if c2.button("🔍 Buscar", use_container_width=True): pass
         
         boleto_info = run_query("""
@@ -501,69 +503,65 @@ def main():
             c_share2.link_button("📲 WhatsApp", link, use_container_width=True)
             
         else:
-            # DISPONIBLE
-            st.success("Boleto DISPONIBLE")
+            # --- BOLETO DISPONIBLE (ZONA DE VENTA) ---
+            st.success(f"🟢 El boleto {numero} está DISPONIBLE")
+            
             with st.form("venta"):
-                clientes = run_query("SELECT id, nombre_completo FROM clientes ORDER BY nombre_completo")
-                opc_cli = {c[1]: c[0] for c in clientes} if clientes else {}
-                nom_sel = st.selectbox("Cliente:", list(opc_cli.keys()))
-                abono = st.number_input("Abono Inicial", value=precio_s)
+                st.write("### 📝 Asignar Boleto")
                 
-                if st.form_submit_button("ASIGNAR"):
+                # 1. Cargar Clientes CON CÓDIGO para poder buscar
+                clientes = run_query("SELECT id, nombre_completo, codigo FROM clientes ORDER BY nombre_completo")
+                
+                opc_cli = {}
+                if clientes:
+                    for c in clientes:
+                        # Formato: "JUAN PEREZ | 095123"
+                        # Esto permite que si escribes el código, aparezca el cliente
+                        codigo_display = c[2] if c[2] else "S/C"
+                        etiqueta = f"{c[1]} | {codigo_display}"
+                        opc_cli[etiqueta] = c[0]
+                
+                # 2. Selector Inteligente (Busca por lo que escribas)
+                nom_sel = st.selectbox(
+                    "👤 Buscar Cliente (Escribe Nombre o Código):", 
+                    options=list(opc_cli.keys()),
+                    index=None,
+                    placeholder="Escribe aquí para filtrar..."
+                )
+                
+                c_abono, c_precio = st.columns(2)
+                abono = c_abono.number_input("Abono Inicial ($)", value=precio_s, min_value=0.0)
+                c_precio.metric("Precio Boleto", f"${precio_s}")
+                
+                if st.form_submit_button("💾 REGISTRAR VENTA", use_container_width=True):
                     if nom_sel:
                         cid = opc_cli[nom_sel]
+                        # Lógica de Estado
                         est = 'pagado' if abono >= precio_s else 'abonado'
                         if abono == 0: est = 'apartado'
-                        run_query("INSERT INTO boletos (sorteo_id, numero, estado, precio, cliente_id, total_abonado, fecha_asignacion) VALUES (%s, %s, %s, %s, %s, %s, NOW())", (id_sorteo, numero, est, precio_s, cid, abono), fetch=False)
-                        st.success("Asignado"); time.sleep(1); st.rerun()
+                        
+                        # Guardar
+                        run_query("""
+                            INSERT INTO boletos (sorteo_id, numero, estado, precio, cliente_id, total_abonado, fecha_asignacion) 
+                            VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                        """, (id_sorteo, numero, est, precio_s, cid, abono), fetch=False)
+                        
+                        # Historial
+                        run_query("""
+                            INSERT INTO historial (sorteo_id, usuario, accion, detalle, monto) 
+                            VALUES (%s, 'MOVIL', 'VENTA', %s, %s)
+                        """, (id_sorteo, f"Venta boleto {numero}", abono), fetch=False)
+                        
+                        st.balloons()
+                        st.success("✅ ¡Venta Exitosa!")
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error("⚠️ Por favor selecciona un cliente de la lista.")
 
-    # ---------------- PESTAÑA CLIENTES ----------------
-    with tab_clientes:
-        st.header("Gestión Clientes")
-        with st.expander("Nuevo Cliente"):
-            with st.form("new_cli"):
-                nn = st.text_input("Nombre").upper()
-                nc = st.text_input("Cédula")
-                nt = st.text_input("Teléfono")
-                nd = st.text_input("Dirección")
-                if st.form_submit_button("Guardar"):
-                    if nn and nt:
-                        cod = datetime.now().strftime("%H%M%S")
-                        run_query("INSERT INTO clientes (codigo, nombre_completo, cedula, telefono, direccion, fecha_registro) VALUES (%s, %s, %s, %s, %s, NOW())", (cod, nn, nc, nt, nd), fetch=False)
-                        st.success("Guardado"); st.rerun()
-                    else: st.error("Faltan datos")
-        
-        # Lista y Edición
-        q = st.text_input("Buscar cliente...")
-        sql = "SELECT id, nombre_completo, cedula, telefono, direccion FROM clientes"
-        if q: sql += f" WHERE nombre_completo ILIKE '%{q}%' OR cedula ILIKE '%{q}%'"
-        sql += " ORDER BY id DESC LIMIT 15"
-        res = run_query(sql)
-        
-        if res:
-            for c in res:
-                with st.container(border=True):
-                    c1, c2 = st.columns([3,1])
-                    c1.write(f"**{c[1]}**\n🆔 {c[2]} | 📞 {c[3]} | 📍 {c[4]}")
-                    if c2.button("Editar", key=c[0]):
-                        st.session_state.edit_id = c[0]
-                        st.session_state.edit_vals = c
-            
-            if 'edit_id' in st.session_state:
-                id_e = st.session_state.edit_id
-                vals = st.session_state.edit_vals
-                st.markdown("---")
-                st.write(f"Editando: {vals[1]}")
-                with st.form("edit_cli"):
-                    en = st.text_input("Nombre", value=vals[1])
-                    ec = st.text_input("Cédula", value=vals[2])
-                    et = st.text_input("Teléfono", value=vals[3])
-                    ed = st.text_input("Dirección", value=vals[4])
-                    if st.form_submit_button("Guardar Cambios"):
-                        run_query("UPDATE clientes SET nombre_completo=%s, cedula=%s, telefono=%s, direccion=%s WHERE id=%s", (en, ec, et, ed, id_e), fetch=False)
-                        del st.session_state.edit_id
-                        st.success("Actualizado"); st.rerun()
-
+# ============================================================================
+#  PUNTO DE ENTRADA (CON LOGIN)
+# ============================================================================
 if __name__ == "__main__":
     if check_password():
         main()
