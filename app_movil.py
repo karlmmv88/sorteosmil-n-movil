@@ -446,22 +446,22 @@ def main():
 
     # ---------------- PESTAÑA VENTA ----------------
     with tab_venta:
-        import zipfile # Necesario para descargar varios PDFs a la vez
-        
-        # --- SECCIÓN: VISUALIZACIÓN (Igual que antes) ---
+        # --- SECCIÓN 1: VISUALIZACIÓN EN VIVO ---
         st.write("### 📊 Estado del Sorteo")
         ver_ocupados = st.checkbox("Mostrar Ocupados (Amarillo)", value=True)
         img_bytes = generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, mostrar_ocupados=ver_ocupados)
         st.image(img_bytes, caption="Actualizado en tiempo real", use_container_width=True)
-        st.download_button("⬇️ DESCARGAR IMAGEN", img_bytes, "Tabla.jpg", "image/jpeg", use_container_width=True)
+        nombre_archivo = "Tabla_ConOcupados.jpg" if ver_ocupados else "Tabla_Limpia.jpg"
+        st.download_button("⬇️ DESCARGAR IMAGEN", img_bytes, nombre_archivo, "image/jpeg", use_container_width=True)
+        
         st.divider() 
 
         # --- SELECTOR DE MODO ---
         modo = st.radio("🔍 Método de Búsqueda:", ["🔢 Por N° de Boleto", "👤 Por Cliente"], horizontal=True)
-        st.write("") # Espacio
+        st.write("") 
 
         # ============================================================
-        #  MODO A: POR NÚMERO (El Clásico que ya te gustaba)
+        #  MODO A: POR NÚMERO (Individual)
         # ============================================================
         if modo == "🔢 Por N° de Boleto":
             fmt_input = "%02d" if cantidad_boletos <= 100 else "%03d"
@@ -478,7 +478,7 @@ def main():
             """, (numero, id_sorteo))
             
             if boleto_info:
-                # --- BOLETO OCUPADO ---
+                # --- OCUPADO ---
                 b_id, estado, b_precio, b_abonado, b_fecha, c_nom, c_tel, c_ced, c_dir, c_cod = boleto_info[0]
                 b_precio = float(b_precio); b_abonado = float(b_abonado)
                 
@@ -502,11 +502,10 @@ def main():
                             st.success("Abonado"); time.sleep(1); st.rerun()
                     
                     st.divider()
-                    
                     # ACCIONES
                     c_btn1, c_btn2, c_btn3 = st.columns(3)
                     if estado != 'apartado': 
-                        if c_btn1.button("🟡 APARTADO", use_container_width=True):
+                        if c_btn1.button("🟡 APARTAR", use_container_width=True):
                             run_query("UPDATE boletos SET estado='apartado', total_abonado=0 WHERE id=%s", (b_id,), fetch=False)
                             run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle) VALUES (%s, 'MOVIL', 'REVERTIR_APARTADO', %s)", (id_sorteo, f"Marcado como apartado {numero}"), fetch=False)
                             st.rerun()
@@ -521,7 +520,7 @@ def main():
                         st.warning("Boleto liberado."); time.sleep(1); st.rerun()
 
                 st.divider()
-                # --- PDF y WhatsApp Individual ---
+                # --- PDF INDIVIDUAL ---
                 datos_pdf = {'cliente': c_nom, 'cedula': c_ced, 'telefono': c_tel, 'direccion': c_dir, 'codigo_cli': c_cod, 'estado': estado, 'precio': b_precio, 'abonado': b_abonado, 'fecha_asignacion': b_fecha}
                 pdf_bytes = generar_pdf_memoria(numero, datos_pdf, config_full, cantidad_boletos)
                 
@@ -536,7 +535,7 @@ def main():
                 c_share2.link_button("📲 WhatsApp", link, use_container_width=True)
 
             else:
-                # --- BOLETO DISPONIBLE ---
+                # --- DISPONIBLE (Venta) ---
                 fmt_num_show = "{:02d}" if cantidad_boletos <= 100 else "{:03d}"
                 st.success(f"🟢 El boleto {fmt_num_show.format(numero)} está DISPONIBLE")
                 with st.form("venta"):
@@ -563,10 +562,10 @@ def main():
                         else: st.error("⚠️ Selecciona un cliente.")
 
         # ============================================================
-        #  MODO B: POR CLIENTE (Gestión Masiva con PDF y WhatsApp PC)
+        #  MODO B: POR CLIENTE (Gestión Masiva - PDFs Sueltos)
         # ============================================================
         else:
-            # 1. Buscador de Clientes (que tengan boletos)
+            # 1. Buscador de Clientes
             clientes_con_boletos = run_query("""
                 SELECT DISTINCT c.id, c.nombre_completo, c.telefono, c.cedula, c.direccion, c.codigo
                 FROM clientes c
@@ -589,7 +588,7 @@ def main():
                 cid = opciones_cliente[cliente_sel]
                 datos_c = datos_cliente_map[cid]
                 
-                # 2. Cargar Boletos del Cliente
+                # 2. Cargar Boletos
                 boletos_cli = run_query("""
                     SELECT numero, estado, precio, total_abonado, fecha_asignacion
                     FROM boletos 
@@ -607,14 +606,13 @@ def main():
                     for b in boletos_cli:
                         num, est, pre, abo, f_asig = b
                         pre = float(pre or 0); abo = float(abo or 0)
-                        # 🔥 ETIQUETA LIMPIA: "05 (ABONADO)" (Sin deuda mostrada aquí)
                         lbl = f"{fmt_num.format(num)} ({est.upper()})"
                         opc_boletos[lbl] = {'numero': num, 'estado': est, 'precio': pre, 'abonado': abo, 'fecha': f_asig}
                     
                     seleccion = st.multiselect(
-                        "✅ Selecciona los boletos a gestionar:",
+                        "✅ Selecciona los boletos a procesar:",
                         options=list(opc_boletos.keys()),
-                        default=list(opc_boletos.keys()) # Todos marcados por defecto
+                        default=list(opc_boletos.keys()) 
                     )
                     
                     if seleccion:
@@ -623,7 +621,6 @@ def main():
                         
                         # --- BOTONES ACCIÓN ---
                         c_acc1, c_acc2, c_acc3 = st.columns(3)
-                        
                         if c_acc1.button("✅ PAGAR", use_container_width=True):
                             for d in datos_sel:
                                 if d['estado'] != 'pagado':
@@ -644,8 +641,7 @@ def main():
 
                         st.divider()
                         
-                        # --- WHATSAPP (Mensaje IDÉNTICO a PC con Estados Individuales) ---
-                        # Formato: "N° 05 (ABONADO), N° 06 (PAGADO)"
+                        # --- WHATSAPP (CON TRÉBOL ARREGLADO) ---
                         partes_msg = []
                         for d in datos_sel:
                             n_s = fmt_num.format(d['numero'])
@@ -654,56 +650,45 @@ def main():
                         
                         txt_boletos = ", ".join(partes_msg)
                         
-                        # Mensaje base de PC
                         msg_wa = (
                             f"Hola. Saludos, somos Sorteos Milán!!, aquí te enviamos los comprobantes de tus "
                             f"BOLETOS: {txt_boletos}, a nombre de '{datos_c['nombre']}' para el sorteo "
                             f"'{nombre_s}' del día '{fecha_s}' . ¡Suerte!🍀"
                         )
                         
-                        col_wa, col_pdf = st.columns(2)
+                        col_wa, col_pdf = st.columns([1, 1])
                         
-                        # Botón WhatsApp
                         tel_raw = datos_c['telefono']
                         if tel_raw:
                             tel_clean = "".join(filter(str.isdigit, str(tel_raw)))
                             if len(tel_clean) == 10: tel_clean = "58" + tel_clean
                             elif len(tel_clean) == 11 and tel_clean.startswith("0"): tel_clean = "58" + tel_clean[1:]
+                            # Uso explícito de quote para asegurar que el trebol pase
                             link = f"https://wa.me/{tel_clean}?text={urllib.parse.quote(msg_wa)}"
                             col_wa.link_button("📲 Enviar WhatsApp", link, use_container_width=True)
                         else:
                             col_wa.warning("Sin teléfono")
 
-                        # --- PDF GENERADOR (Solo de la selección) ---
-                        if len(datos_sel) == 1:
-                            # CASO 1: UN SOLO BOLETO -> Descarga el PDF directo
-                            d = datos_sel[0]
-                            # Reconstruimos datos completos para el generador
-                            info_pdf = {
-                                'cliente': datos_c['nombre'], 'cedula': datos_c['cedula'], 'telefono': datos_c['telefono'],
-                                'direccion': datos_c['direccion'], 'codigo_cli': datos_c['codigo'],
-                                'estado': d['estado'], 'precio': d['precio'], 'abonado': d['abonado'], 'fecha_asignacion': d['fecha']
-                            }
-                            pdf_data = generar_pdf_memoria(d['numero'], info_pdf, config_full, cantidad_boletos)
-                            n_file = f"{fmt_num.format(d['numero'])}_Boleto.pdf"
-                            col_pdf.download_button("📄 PDF", pdf_data, n_file, "application/pdf", use_container_width=True)
-                        else:
-                            # CASO 2: VARIOS BOLETOS -> Descarga un ZIP con todos los PDFs
-                            zip_buffer = io.BytesIO()
-                            with zipfile.ZipFile(zip_buffer, "w") as zf:
-                                for d in datos_sel:
-                                    info_pdf = {
-                                        'cliente': datos_c['nombre'], 'cedula': datos_c['cedula'], 'telefono': datos_c['telefono'],
-                                        'direccion': datos_c['direccion'], 'codigo_cli': datos_c['codigo'],
-                                        'estado': d['estado'], 'precio': d['precio'], 'abonado': d['abonado'], 'fecha_asignacion': d['fecha']
-                                    }
-                                    pdf_data = generar_pdf_memoria(d['numero'], info_pdf, config_full, cantidad_boletos)
-                                    # Nombre dentro del ZIP
-                                    n_file = f"{fmt_num.format(d['numero'])}_{d['estado']}.pdf"
-                                    zf.writestr(n_file, pdf_data.getvalue())
-                            
-                            zip_buffer.seek(0)
-                            col_pdf.download_button("📦 PDFs (ZIP)", zip_buffer, "Boletos_Seleccion.zip", "application/zip", use_container_width=True)
+                        # --- PDFS SUELTOS (UNO POR BOTÓN) ---
+                        # Generamos un botón por cada boleto seleccionado
+                        with col_pdf:
+                            st.write("**Descargar PDFs:**")
+                            for d in datos_sel:
+                                info_pdf = {
+                                    'cliente': datos_c['nombre'], 'cedula': datos_c['cedula'], 'telefono': datos_c['telefono'],
+                                    'direccion': datos_c['direccion'], 'codigo_cli': datos_c['codigo'],
+                                    'estado': d['estado'], 'precio': d['precio'], 'abonado': d['abonado'], 'fecha_asignacion': d['fecha']
+                                }
+                                pdf_data = generar_pdf_memoria(d['numero'], info_pdf, config_full, cantidad_boletos)
+                                n_file = f"{fmt_num.format(d['numero'])}_{d['estado'].upper()}.pdf"
+                                
+                                # Usamos key único para que no de error
+                                st.download_button(
+                                    f"📄 PDF {fmt_num.format(d['numero'])}", 
+                                    pdf_data, n_file, "application/pdf", 
+                                    key=f"btn_down_{d['numero']}", 
+                                    use_container_width=True
+                                )
 
                     else:
                         st.info("👆 Selecciona boletos de la lista para ver acciones.")
