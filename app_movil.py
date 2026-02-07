@@ -75,158 +75,7 @@ def get_whatsapp_link_exacto(telefono, boleto_num, estado, cliente_nom, sorteo_n
     return f"https://wa.me/{tel_clean}?text={urllib.parse.quote(mensaje)}"
 
 # ============================================================================
-#  2. PDF DIGITAL (Idéntico a servicios.py con corrección de ceros)
-# ============================================================================
-def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_boletos=1000):
-    buffer = io.BytesIO()
-    rifa = config_db['rifa']
-    empresa = config_db['empresa']
-    
-    # 🔥 CORRECCIÓN: Formato dinámico en el PDF
-    fmt_num = "{:02d}" if cantidad_boletos <= 100 else "{:03d}"
-    num_str = fmt_num.format(numero_boleto)
-    
-    # Datos
-    nom_cli = datos_completos.get('cliente', '')
-    cedula = datos_completos.get('cedula', '')
-    tel = datos_completos.get('telefono', '')
-    direcc = datos_completos.get('direccion', '')
-    codigo_cli = datos_completos.get('codigo_cli', '')
-    estado_fmt = datos_completos.get('estado', '').upper()
-    precio = float(datos_completos.get('precio', 0))
-    abonado = float(datos_completos.get('abonado', 0))
-    saldo = precio - abonado
-    fecha_asig = datos_completos.get('fecha_asignacion', '')
-
-    # Altura dinámica según premios
-    lista_claves = ["premio1", "premio2", "premio3", "premio_extra1", "premio_extra2"]
-    count_premios = sum(1 for k in lista_claves if rifa.get(k))
-    total_h = 390 + max(0, (count_premios - 3) * 20)
-    total_w = 390
-    
-    c = canvas.Canvas(buffer, pagesize=(total_w, total_h))
-    m_izq, m_der = 30, total_w - 30
-    centro = total_w / 2
-    y = total_h - 30
-    
-    # LOGO
-    logo_files = ["logo.jpg", "logo.png", "logo.jpeg"]
-    for f in logo_files:
-        if os.path.exists(f):
-            try:
-                c.drawImage(ImageReader(f), m_izq, y-27, width=38, height=38, preserveAspectRatio=True, mask='auto')
-                break
-            except: pass
-
-    # Encabezado
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(m_izq + 50, y, empresa.get('nombre', 'SORTEOS MILÁN'))
-    c.setFont("Helvetica", 8)
-    c.drawString(m_izq + 50, y-12, f"RIF: {empresa.get('rif', '')}")
-    c.drawString(m_izq + 50, y-25, f"Tel: {empresa.get('telefono', '')}")
-    
-    # Número Boleto (Con el formato corregido)
-    c.setFont("Helvetica-Bold", 20)
-    c.setFillColorRGB(0.70, 0.55, 0.35) 
-    c.drawRightString(m_der, y-5, f"BOLETO N° {num_str}")
-    c.setFillColorRGB(0,0,0)
-    
-    # Fecha
-    c.setFont("Helvetica-Oblique", 8)
-    c.drawRightString(m_der, y-25, f"Emitido: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
-    
-    y -= 35; c.setStrokeColorRGB(0.70, 0.55, 0.35); c.line(m_izq, y, m_der, y)
-    
-    y -= 18; c.setFont("Helvetica-Bold", 15)
-    
-    # --- CAMBIO DE COLOR (Dorado) ---
-    c.setFillColorRGB(0.70, 0.55, 0.35) 
-    c.drawCentredString(centro, y, "COMPROBANTE DE SORTEO")
-    c.setFillColorRGB(0, 0, 0) # Volver a negro para lo demás
-    # -------------------------------
-    
-    y -= 8; c.line(m_izq, y, m_der, y)
-    
-    # Datos Sorteo
-    y_start = y - 20
-    col_izq_x = m_izq; col_der_x = centro + 20 
-    y = y_start
-    c.setFont("Helvetica-Bold", 10); c.drawString(col_izq_x, y, "SORTEO:")
-    c.drawString(col_izq_x + 50, y, rifa['nombre'][:35])
-    y -= 15
-    c.drawString(col_izq_x, y, "FECHA:")
-    c.drawString(col_izq_x + 50, y, f"{rifa.get('fecha_sorteo','')} {rifa.get('hora_sorteo','')}")
-    
-    # Premios
-    y_prem = y_start
-    c.drawString(col_der_x, y_prem, "PREMIOS:")
-    y_prem -= 12; c.setFont("Helvetica", 9)
-    etiquetas = ["1er:", "2do:", "3er:", "Ext:", "Ext:"]
-    for i, k in enumerate(lista_claves):
-        val = rifa.get(k, "")
-        if val:
-            lbl = etiquetas[i] if i < len(etiquetas) else f"{i+1}º:"
-            c.drawString(col_der_x, y_prem, f"{lbl} {val[:30]}")
-            y_prem -= 12
-    
-    # Cliente
-    y_fin_arriba = min(y, y_prem)
-    y_linea = y_fin_arriba - 10
-    c.setLineWidth(1); c.setStrokeColorRGB(0, 0, 0)
-    c.line(m_izq, y_linea, m_der, y_linea) 
-    y = y_linea - 20
-    
-    c.setFont("Helvetica-Bold", 10); c.drawString(m_izq, y, "INFORMACIÓN DEL CLIENTE")
-    y -= 15; c.setFont("Helvetica", 9)
-    c.drawString(m_izq, y, f"Código: {codigo_cli or ''}")
-    y -= 12
-    c.drawString(m_izq, y, f"Nombre: {nom_cli}")
-    y -= 12
-    c.drawString(m_izq, y, f"Cédula: {cedula}")
-    y -= 12
-    c.drawString(m_izq, y, f"Teléfono: {tel}")
-    y -= 12
-    c.drawString(m_izq, y, f"Dirección: {direcc}")
-    y -= 10
-    c.line(m_izq, y, m_der, y)
-    
-    # Pagos
-    y_final = y - 20
-    x_div = total_w * 0.55
-    c.line(x_div, y_final + 5, x_div, y_final - 55)
-    y = y_final
-    c.setFont("Helvetica-Bold", 10); c.drawString(m_izq, y, "INFORMACIÓN DE PAGOS")
-    y -= 15; c.setFont("Helvetica", 9)
-    c.drawString(m_izq, y, f"Precio Total: ${precio:,.2f}")
-    y -= 12; c.drawString(m_izq, y, f"Total Abonado: ${abonado:,.2f}")
-    y -= 12
-    c.drawString(m_izq, y, f"Saldo Pendiente: ${saldo:,.2f}")
-    y -= 18; c.setFont("Helvetica", 8)
-    c.drawString(m_izq, y, f"Fecha registro: {str(fecha_asig)}")
-    
-    # Estado
-    y_est = y_final
-    centro_der = x_div + ((m_der - x_div) / 2)
-    c.setFont("Helvetica-Bold", 10); c.setFillColorRGB(0, 0, 0)
-    c.drawCentredString(centro_der, y_est, "ESTADO:")
-    c.setFont("Helvetica-Bold", 18); c.setFillColorRGB(0, 0, 0.4) 
-    c.drawCentredString(centro_der, y_est - 30, estado_fmt)
-    c.setFillColorRGB(0, 0, 0)
-    
-    # Footer
-    y -= 25; c.setStrokeColorRGB(0.7, 0.7, 0.7); c.setLineWidth(0.5)
-    c.line(m_izq, y, m_der, y)
-    y -= 15; c.setFont("Helvetica-BoldOblique", 8)
-    c.drawCentredString(centro, y, "¡GRACIAS POR PARTICIPAR EN NUESTRO SORTEO!")
-    y -= 10; c.setFont("Helvetica-Oblique", 7)
-    c.drawCentredString(centro, y, "Este comprobante es su garantía. Por favor, consérvelo.")
-    
-    c.save()
-    buffer.seek(0)
-    return buffer
-
-# ============================================================================
-#  2. PDF DIGITAL (APP MÓVIL - LÍNEAS DORADAS)
+#  2. PDF DIGITAL (APP MÓVIL - CORREGIDO DORADO)
 # ============================================================================
 def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_boletos=1000):
     buffer = io.BytesIO()
@@ -268,7 +117,7 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
                 break
             except: pass
 
-    # Encabezado
+    # Encabezado Texto
     c.setFont("Helvetica-Bold", 12)
     c.drawString(m_izq + 50, y, empresa.get('nombre', 'SORTEOS MILÁN'))
     c.setFont("Helvetica", 8)
@@ -281,19 +130,21 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
     c.setFillColorRGB(0,0,0)
     
     c.setFont("Helvetica-Oblique", 8)
-    c.drawRightString(m_der, y-25, f"Emitido: {datetime.now().strftime('%d/%m/%Y %I:%M %p').lower()}")
+    c.drawRightString(m_der, y-25, f"Emitido: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
     
     # --- HEADER: LÍNEAS DORADAS ---
     y -= 35
-    c.setStrokeColorRGB(0.70, 0.55, 0.35)
+    c.setStrokeColorRGB(0.70, 0.55, 0.35) # Dorado
     c.line(m_izq, y, m_der, y)
+    
     y -= 18
     c.setFont("Helvetica-Bold", 15)
     c.setFillColorRGB(0.70, 0.55, 0.35) 
     c.drawCentredString(centro, y, "COMPROBANTE DE SORTEO")
     c.setFillColorRGB(0, 0, 0)
+    
     y -= 8
-    c.line(m_izq, y, m_der, y)
+    c.line(m_izq, y, m_der, y) # Hereda Dorado
     
     # Datos Sorteo
     y_start = y - 20
@@ -324,10 +175,11 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
     y_linea = y_fin_arriba - 10
     
     c.setLineWidth(1)
-    c.setStrokeColorRGB(0.70, 0.55, 0.35) # 🔥 CAMBIO: Color Dorado
+    # 🔥 CORRECCIÓN: Aquí estaba en negro (0,0,0), lo forzamos a dorado
+    c.setStrokeColorRGB(0.70, 0.55, 0.35) 
     c.line(m_izq, y_linea, m_der, y_linea) 
-    y = y_linea - 20
     
+    y = y_linea - 20
     c.setFont("Helvetica-Bold", 10); c.drawString(m_izq, y, "INFORMACIÓN DEL CLIENTE")
     y -= 15; c.setFont("Helvetica", 9)
     c.drawString(m_izq, y, f"Código: {codigo_cli or ''}")
@@ -341,7 +193,7 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
     c.drawString(m_izq, y, f"Dirección: {direcc}")
     y -= 10
     
-    # Línea inferior del cliente (Hereda el dorado anterior)
+    # Línea inferior del cliente (Hereda el dorado)
     c.line(m_izq, y, m_der, y) 
     
     # --- SECCIÓN PAGOS ---
@@ -371,9 +223,9 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
     c.drawCentredString(centro_der, y_est - 30, estado_fmt)
     c.setFillColorRGB(0, 0, 0)
     
-    # --- FOOTER (GRIS) ---
+    # --- FOOTER (GRIS - EXCEPCIÓN) ---
     y -= 25
-    c.setStrokeColorRGB(0.7, 0.7, 0.7) # 🔥 EXCEPCIÓN: Volvemos a Gris
+    c.setStrokeColorRGB(0.7, 0.7, 0.7) # 🔥 Volvemos a Gris solo para el final
     c.setLineWidth(0.5)
     c.line(m_izq, y, m_der, y)
     
@@ -385,6 +237,150 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
     c.save()
     buffer.seek(0)
     return buffer
+
+# ============================================================================
+#  MOTOR DE REPORTES VISUALES (COPIA EXACTA DE BOLETOS.PY)
+# ============================================================================
+def generar_imagen_reporte(id_sorteo, config_completa, cantidad_boletos, mostrar_ocupados=True):
+    """
+    Genera la imagen JPG replicando EXACTAMENTE la lógica de boletos.py.
+    Cambia la resolución y tamaño de fuente según si son 100 o 1000 boletos.
+    """
+    
+    # 1. CONFIGURACIÓN GEOMÉTRICA (Lógica idéntica a PC)
+    # ---------------------------------------------------------
+    if cantidad_boletos <= 100:
+        # Modo 100: Lienzo más angosto y alto (2000x2500)
+        cols_img = 10
+        rows_img = 10
+        base_w = 2000
+        base_h = 2500
+        font_s_title = 80
+        font_s_info = 40
+        font_s_num = 60
+    else:
+        # Modo 1000: Lienzo ancho estándar (4000x3000)
+        cols_img = 25
+        rows_img = 40
+        base_w = 4000
+        base_h = 3000
+        font_s_title = 90
+        font_s_info = 42
+        font_s_num = 35
+    
+    margin_px = 80
+    header_h = 450
+    
+    # Cálculo de celdas CON ESPACIO (Padding de 4px como en PC)
+    grid_pw = base_w - (2 * margin_px)
+    grid_ph = base_h - (2 * margin_px) - header_h
+    cell_pw = (grid_pw / cols_img) - 4 
+    cell_ph = (grid_ph / rows_img) - 4
+
+    # 2. LIENZO Y FUENTES
+    # ---------------------------------------------------------
+    img = Image.new('RGB', (base_w, base_h), 'white')
+    draw = ImageDraw.Draw(img)
+    
+    # Fuentes (DejaVu es el equivalente a Arial en Linux/Streamlit)
+    try:
+        font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", font_s_title)
+        font_info = ImageFont.truetype("DejaVuSans.ttf", font_s_info)
+        font_num = ImageFont.truetype("DejaVuSans-Bold.ttf", font_s_num)
+    except:
+        font_title = ImageFont.load_default()
+        font_info = ImageFont.load_default()
+        font_num = ImageFont.load_default()
+
+    rifa = config_completa['rifa']
+    
+    # 3. DIBUJAR ENCABEZADO
+    # ---------------------------------------------------------
+    # Título Centrado
+    titulo = rifa['nombre'].upper()
+    bbox_t = draw.textbbox((0,0), titulo, font=font_title)
+    tw_t = bbox_t[2] - bbox_t[0]
+    draw.text(((base_w - tw_t)/2, 60), titulo, fill='#1a73e8', font=font_title)
+    
+    # Columna Izquierda (Info)
+    iy = 180
+    draw.text((margin_px, iy), f"📅 Fecha: {datetime.now().strftime('%d/%m/%Y')}", fill='#555', font=font_info)
+    iy += 60
+    # Fecha Sorteo
+    txt_sorteo = f"🎲 Sorteo: {rifa.get('fecha_sorteo','')} {rifa.get('hora_sorteo','')}"
+    draw.text((margin_px, iy), txt_sorteo, fill='#388E3C', font=font_info)
+    iy += 60
+    # Precio
+    draw.text((margin_px, iy), f"💵 Precio: {rifa.get('precio_boleto',0)} $", fill='#D32F2F', font=font_info)
+    
+    # Columna Derecha (Premios)
+    # Ubicación exacta de PC: Ancho total - margen - 900px
+    px = base_w - margin_px - 900 
+    py = 180
+    draw.text((px, py), "🏆 PREMIOS:", fill='#D32F2F', font=font_info)
+    py += 60
+    
+    keys = ["premio1", "premio2", "premio3", "premio_extra1", "premio_extra2"]
+    lbls = ["1er:", "2do:", "3er:", "Ext:", "Ext:"]
+    for k, l in zip(keys, lbls):
+        val = rifa.get(k)
+        if val:
+            draw.text((px, py), f"{l} {val}", fill='black', font=font_info)
+            py += 50
+
+    # 4. DIBUJAR GRILLA (Lógica Matemática de PC)
+    # ---------------------------------------------------------
+    # Obtener estados
+    boletos_ocupados = {}
+    ocupados_raw = run_query("SELECT numero, estado FROM boletos WHERE sorteo_id = %s", (id_sorteo,))
+    if ocupados_raw: 
+        boletos_ocupados = {row[0]: row[1] for row in ocupados_raw}
+        
+    y_start = margin_px + header_h
+    fmt = "{:02d}" if cantidad_boletos <= 100 else "{:03d}"
+
+    for i in range(cantidad_boletos):
+        r = i // cols_img
+        c = i % cols_img
+        
+        # FÓRMULA EXACTA DE BOLETOS.PY PARA COORDENADAS
+        # x = margen + (columna * (ancho_celda + espacio))
+        x = margin_px + (c * (cell_pw + 4))
+        y = y_start + (r * (cell_ph + 4))
+        
+        estado = boletos_ocupados.get(i, 'disponible')
+        ocupado = estado != 'disponible'
+        
+        # Colores
+        bg_color = 'white'
+        texto_visible = True
+        
+        if mostrar_ocupados:
+            if ocupado: bg_color = '#FFFF00' # Amarillo
+        else:
+            if ocupado: texto_visible = False # Borrar número (hueco blanco)
+        
+        # Dibujar Rectángulo
+        draw.rectangle([x, y, x + cell_pw, y + cell_ph], fill=bg_color, outline='black', width=3)
+        
+        # Dibujar Número Centrado
+        if texto_visible:
+            txt = fmt.format(i)
+            
+            bbox_n = draw.textbbox((0,0), txt, font=font_num)
+            tw_n = bbox_n[2] - bbox_n[0]
+            th_n = bbox_n[3] - bbox_n[1]
+            
+            # Centro matemático exacto
+            tx = x + (cell_pw - tw_n) / 2
+            ty = y + (cell_ph - th_n) / 2
+            
+            draw.text((tx, ty), txt, fill='black', font=font_num)
+            
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=95)
+    buf.seek(0)
+    return buf
 
 # ============================================================================
 #  SISTEMA DE LOGIN
