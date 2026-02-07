@@ -177,7 +177,7 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
     
     # --- SECCIÓN CLIENTE ---
     y_fin_arriba = min(y, y_prem)
-    y_linea = y_fin_arriba - 4
+    y_linea = y_fin_arriba - 3
     
     c.setLineWidth(1)
     c.setStrokeColorRGB(0.70, 0.55, 0.35) 
@@ -909,4 +909,5 @@ def main():
 if __name__ == "__main__":
     if check_password():
         main()
+
 
