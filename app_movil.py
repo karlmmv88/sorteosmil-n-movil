@@ -149,7 +149,7 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
     # Datos Sorteo
     y_start = y - 20
     col_izq_x = m_izq
-    col_der_x = centro - 20 
+    col_der_x = centro - 5 
     
     y = y_start
     c.setFont("Helvetica-Bold", 10); c.drawString(col_izq_x, y, "SORTEO:")
@@ -885,4 +885,5 @@ def main():
 if __name__ == "__main__":
     if check_password():
         main()
+
 
