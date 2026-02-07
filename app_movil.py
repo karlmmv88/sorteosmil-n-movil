@@ -449,116 +449,206 @@ def main():
         # --- SECCIÓN: VISUALIZACIÓN EN VIVO ---
         st.write("### 📊 Estado del Sorteo")
         
-        # Interruptor simple para cambiar de vista (Por defecto activado = Amarillo)
+        # Interruptor para ver ocupados o limpia
         ver_ocupados = st.checkbox("Mostrar Ocupados (Amarillo)", value=True)
         
-        # 1. Generar la imagen automáticamente en cada carga
-        # (Esto asegura que siempre esté actualizada con la base de datos)
+        # Generar y mostrar imagen
         img_bytes = generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, mostrar_ocupados=ver_ocupados)
-        
-        # 2. Mostrar la imagen en pantalla
         st.image(img_bytes, caption="Actualizado en tiempo real", use_container_width=True)
         
-        # 3. Botón de descarga justo debajo
+        # Botón descarga
         nombre_archivo = "Tabla_ConOcupados.jpg" if ver_ocupados else "Tabla_Limpia.jpg"
         st.download_button(
-            label="⬇️ DESCARGAR ESTA IMAGEN",
+            label="⬇️ DESCARGAR IMAGEN",
             data=img_bytes,
             file_name=nombre_archivo,
             mime="image/jpeg",
             use_container_width=True
         )
         
-        st.divider() # Separador visual
-        
-        # --- BUSCADOR Y VENTA (Código Original) ---
-        fmt_input = "%02d" if cantidad_boletos <= 100 else "%03d"
-        c1, c2 = st.columns([2,1])
-        numero = c1.number_input("Boleto N°:", min_value=0, max_value=cantidad_boletos-1, step=1, format=fmt_input)
-        if c2.button("🔍 Buscar", use_container_width=True): pass
-        
-        boleto_info = run_query("""
-            SELECT b.id, b.estado, b.precio, b.total_abonado, b.fecha_asignacion,
-                   c.nombre_completo, c.telefono, c.cedula, c.direccion, c.codigo
-            FROM boletos b
-            LEFT JOIN clientes c ON b.cliente_id = c.id
-            WHERE b.numero = %s AND b.sorteo_id = %s
-        """, (numero, id_sorteo))
-        
-        if boleto_info:
-            # OCUPADO
-            b_id, estado, b_precio, b_abonado, b_fecha, c_nom, c_tel, c_ced, c_dir, c_cod = boleto_info[0]
-            b_precio = float(b_precio); b_abonado = float(b_abonado)
-            
-            st.info(f"👤 {c_nom} | 📞 {c_tel}")
-            c_est = st.columns(3)
-            if estado=='pagado': c_est[0].success("PAGADO")
-            elif estado=='apartado': c_est[0].warning("APARTADO")
-            else: c_est[0].info("ABONADO")
-            c_est[1].metric("Precio", f"${b_precio}")
-            c_est[2].metric("Deuda", f"${b_precio-b_abonado}")
-            
-            # Botones gestión
-            with st.expander("🛠️ Opciones de Gestión", expanded=True):
-                # --- SECCIÓN 1: ABONOS ---
-                if (b_precio - b_abonado) > 0.01:
-                    ma = st.number_input("Monto Abono ($)", min_value=0.0, max_value=(b_precio-b_abonado))
-                    if st.button("💸 REGISTRAR ABONO", use_container_width=True):
-                        nt = b_abonado + ma
-                        ne = 'pagado' if (b_precio - nt) <= 0.01 else 'abonado'
-                        run_query("UPDATE boletos SET total_abonado=%s, estado=%s WHERE id=%s", (nt, ne, b_id), fetch=False)
-                        run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle, monto) VALUES (%s, 'MOVIL', 'ABONO', %s, %s)", (id_sorteo, f"Abono {numero}", ma), fetch=False)
-                        st.success("Abonado"); time.sleep(1); st.rerun()
-                
-                st.divider()
-                
-                # --- SECCIÓN 2: CAMBIO DE ESTADO ---
-                st.caption("Cambiar Estado del Boleto:")
-                c_btn1, c_btn2, c_btn3 = st.columns(3)
-                
-                if estado != 'apartado': 
-                    if c_btn1.button("🟡 APARTADO", use_container_width=True):
-                        run_query("UPDATE boletos SET estado='apartado', total_abonado=0 WHERE id=%s", (b_id,), fetch=False)
-                        run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle) VALUES (%s, 'MOVIL', 'REVERTIR_APARTADO', %s)", (id_sorteo, f"Marcado como apartado {numero}"), fetch=False)
-                        st.rerun()
+        st.divider() 
 
-                if estado != 'pagado':
-                    if c_btn2.button("✅ PAGADO", use_container_width=True):
-                        run_query("UPDATE boletos SET estado='pagado', total_abonado=%s WHERE id=%s", (b_precio, b_id), fetch=False)
-                        run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle) VALUES (%s, 'MOVIL', 'PAGO_COMPLETO', %s)", (id_sorteo, f"Pago total boleto {numero}"), fetch=False)
-                        st.rerun()
-                
-                if c_btn3.button("🗑️ LIBERAR", use_container_width=True):
-                    run_query("DELETE FROM boletos WHERE id=%s", (b_id,), fetch=False)
-                    run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle) VALUES (%s, 'MOVIL', 'LIBERAR', %s)", (id_sorteo, f"Liberado boleto {numero}"), fetch=False)
-                    st.warning("Boleto liberado."); time.sleep(1); st.rerun()
-            
-            # PDF y WhatsApp
-            st.divider()
-            datos_pdf = {'cliente': c_nom, 'cedula': c_ced, 'telefono': c_tel, 'direccion': c_dir, 'codigo_cli': c_cod, 'estado': estado, 'precio': b_precio, 'abonado': b_abonado, 'fecha_asignacion': b_fecha}
-            
-            pdf_bytes = generar_pdf_memoria(numero, datos_pdf, config_full, cantidad_boletos)
-            
-            # Nombre PDF dinámico
-            fmt_file = "{:02d}" if cantidad_boletos <= 100 else "{:03d}"
-            num_file = fmt_file.format(numero)
-            partes_nom = c_nom.strip().split()
-            nom_archivo = f"{partes_nom[0]} {partes_nom[1]}" if len(partes_nom) >= 2 else (partes_nom[0] if partes_nom else "Cliente")
-            nombre_final_pdf = f"{num_file}_{nom_archivo}_({estado.upper()}).pdf"
+        # --- BUSCADOR UNIVERSAL (NOMBRE O NÚMERO) ---
+        st.write("### 🔍 Gestión y Venta")
+        
+        col_search_1, col_search_2 = st.columns([3, 1])
+        # Buscador que acepta texto o números
+        busqueda = col_search_1.text_input("Buscar (Nombre o N° Boleto):", placeholder="Ej: Juan o 50")
+        
+        # Botón limpiar
+        if col_search_2.button("🧹", use_container_width=True):
+            busqueda = ""
+            st.rerun()
 
-            c_share1, c_share2 = st.columns(2)
-            c_share1.download_button("📄 PDF", pdf_bytes, nombre_final_pdf, "application/pdf", use_container_width=True)
+        # LÓGICA DE BÚSQUEDA INTELIGENTE
+        resultados_busqueda = []
+        modo_venta_nueva = False # Se activa si buscamos un número y está libre
+        numero_venta = None
+
+        if busqueda:
+            # 1. Si es número: Buscamos ese boleto específico
+            if busqueda.isdigit():
+                num_b = int(busqueda)
+                if 0 <= num_b < cantidad_boletos:
+                    resultados_busqueda = run_query("""
+                        SELECT b.numero, b.estado, b.precio, b.total_abonado, c.nombre_completo, c.telefono, c.id
+                        FROM boletos b
+                        LEFT JOIN clientes c ON b.cliente_id = c.id
+                        WHERE b.sorteo_id = %s AND b.numero = %s
+                    """, (id_sorteo, num_b))
+                    
+                    # Si no existe (está disponible), activamos modo venta
+                    if not resultados_busqueda:
+                        modo_venta_nueva = True
+                        numero_venta = num_b
             
-            link = get_whatsapp_link_exacto(c_tel, numero, estado, c_nom, nombre_s, str(fecha_s), cantidad_boletos)
-            c_share2.link_button("📲 WhatsApp", link, use_container_width=True)
+            # 2. Si es texto: Buscamos por nombre de cliente (LIKE)
+            else:
+                patron = f"%{busqueda}%"
+                resultados_busqueda = run_query("""
+                    SELECT b.numero, b.estado, b.precio, b.total_abonado, c.nombre_completo, c.telefono, c.id
+                    FROM boletos b
+                    JOIN clientes c ON b.cliente_id = c.id
+                    WHERE b.sorteo_id = %s AND c.nombre_completo ILIKE %s
+                    ORDER BY b.numero ASC
+                """, (id_sorteo, patron))
+
+        # --- CASO 1: SE ENCONTRARON BOLETOS OCUPADOS (GESTIÓN MASIVA) ---
+        if resultados_busqueda:
+            st.success(f"📂 Se encontraron {len(resultados_busqueda)} boletos.")
             
-        else:
-            # DISPONIBLE
-            st.success("🟢 Boleto DISPONIBLE")
-            with st.form("venta"):
+            # Preparar datos para el multiselector
+            opciones_dict = {} 
+            fmt_num = "{:02d}" if cantidad_boletos <= 100 else "{:03d}"
+            
+            for row in resultados_busqueda:
+                n_bol, est, prec, abon, nom_cli, tel_cli, id_cli = row
+                prec = float(prec or 0); abon = float(abon or 0)
+                deuda = prec - abon
+                
+                # Etiqueta visual para la lista
+                etiqueta = f"🎟️ {fmt_num.format(n_bol)} | {nom_cli.split()[0]} | Deuda: ${deuda:.2f}"
+                
+                opciones_dict[etiqueta] = {
+                    'numero': n_bol, 'estado': est, 'precio': prec, 
+                    'abonado': abon, 'nombre': nom_cli, 'tel': tel_cli, 'deuda': deuda, 'cid': id_cli
+                }
+
+            # 1. SELECTOR MÚLTIPLE (Por defecto todos seleccionados)
+            seleccionados_keys = st.multiselect(
+                "✅ Selecciona los boletos a gestionar:",
+                options=list(opciones_dict.keys()),
+                default=list(opciones_dict.keys())
+            )
+            
+            if seleccionados_keys:
+                # Calcular totales de la selección
+                total_deuda_sel = 0
+                lista_nums_sel = []
+                datos_sel = []
+                # Tomamos datos del primer seleccionado para el mensaje (Asumiendo mismo cliente)
+                cliente_principal = opciones_dict[seleccionados_keys[0]]['nombre']
+                telefono_principal = opciones_dict[seleccionados_keys[0]]['tel']
+                
+                for k in seleccionados_keys:
+                    d = opciones_dict[k]
+                    total_deuda_sel += d['deuda']
+                    lista_nums_sel.append(d['numero'])
+                    datos_sel.append(d)
+                
+                # Mostrar Resumen
+                c_res1, c_res2 = st.columns(2)
+                c_res1.metric("Boletos Marcados", len(seleccionados_keys))
+                c_res2.metric("Total Deuda Selección", f"${total_deuda_sel:.2f}")
+                
+                st.markdown("---")
+                st.write("### 🛠️ Acciones en Lote")
+                
+                # --- BOTONES DE ACCIÓN MASIVA ---
+                col_btn1, col_btn2, col_btn3 = st.columns(3)
+                
+                # A) PAGAR TODO
+                if col_btn1.button("✅ PAGAR SELECCIÓN", use_container_width=True):
+                    for d in datos_sel:
+                        if d['estado'] != 'pagado':
+                            run_query("UPDATE boletos SET estado='pagado', total_abonado=%s WHERE sorteo_id=%s AND numero=%s", 
+                                     (d['precio'], id_sorteo, d['numero']), fetch=False)
+                            run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle, monto) VALUES (%s, 'MOVIL', 'PAGO_MASIVO', %s, %s)",
+                                     (id_sorteo, f"Pago total boleto {d['numero']}", d['deuda']), fetch=False)
+                    st.success("¡Pagos registrados!"); time.sleep(1); st.rerun()
+
+                # B) APARTAR (Reiniciar abono a 0)
+                if col_btn2.button("🟡 APARTAR / REINICIAR", use_container_width=True):
+                    for d in datos_sel:
+                        run_query("UPDATE boletos SET estado='apartado', total_abonado=0 WHERE sorteo_id=%s AND numero=%s", 
+                                 (id_sorteo, d['numero']), fetch=False)
+                        run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle) VALUES (%s, 'MOVIL', 'REVERTIR_APARTADO', %s)",
+                                 (id_sorteo, f"Marcado como apartado {d['numero']}"), fetch=False)
+                    st.warning("Boletos pasados a apartados."); time.sleep(1); st.rerun()
+
+                # C) LIBERAR (Borrar)
+                if col_btn3.button("🗑️ LIBERAR SELECCIÓN", type="primary", use_container_width=True):
+                    for d in datos_sel:
+                        run_query("DELETE FROM boletos WHERE sorteo_id=%s AND numero=%s", (id_sorteo, d['numero']), fetch=False)
+                        run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle) VALUES (%s, 'MOVIL', 'LIBERAR_MASIVO', %s)",
+                                 (id_sorteo, f"Liberado boleto {d['numero']}"), fetch=False)
+                    st.success("Boletos liberados."); time.sleep(1); st.rerun()
+
+                # --- WHATSAPP INTELIGENTE ---
+                st.markdown("---")
+                
+                # Construcción del mensaje agrupado
+                str_boletos_wa = ", ".join([fmt_num.format(n) for n in sorted(lista_nums_sel)])
+                
+                # Detectar estado para el mensaje
+                estado_msg = "gestionados"
+                if all(d['estado'] == 'pagado' for d in datos_sel): estado_msg = "PAGADOS"
+                elif all(d['estado'] == 'apartado' for d in datos_sel): estado_msg = "APARTADOS"
+                
+                txt_concepto = "del boleto" if len(lista_nums_sel) == 1 else "de los boletos"
+                
+                mensaje_wa = (
+                    f"Hola {cliente_principal}. Saludos de Sorteos Milán. "
+                    f"Aquí el reporte de tus boletos: {str_boletos_wa} ({estado_msg}). "
+                    f"Saldo pendiente total: ${total_deuda_sel:.2f}. "
+                    f"Sorteo: {nombre_s} - {fecha_s}. ¡Suerte! 🍀"
+                )
+                
+                if telefono_principal and len(str(telefono_principal)) > 5:
+                    tel_clean = "".join(filter(str.isdigit, str(telefono_principal)))
+                    if len(tel_clean) == 10: tel_clean = "58" + tel_clean
+                    elif len(tel_clean) == 11 and tel_clean.startswith("0"): tel_clean = "58" + tel_clean[1:]
+                    
+                    link_wa = f"https://wa.me/{tel_clean}?text={urllib.parse.quote(mensaje_wa)}"
+                    st.link_button(f"📲 Enviar WhatsApp ({len(lista_nums_sel)} boletos)", link_wa, use_container_width=True)
+                else:
+                    st.warning("El cliente no tiene teléfono válido para WhatsApp.")
+                
+                # --- ABONO INDIVIDUAL (Solo si seleccionas 1) ---
+                if len(seleccionados_keys) == 1:
+                    d_unico = datos_sel[0]
+                    if d_unico['deuda'] > 0.01:
+                        st.info("💎 Abono Individual")
+                        ma = st.number_input("Monto Abono ($)", min_value=0.0, max_value=d_unico['deuda'], key="abono_unico")
+                        if st.button("Registrar Abono Parcial"):
+                            nt = d_unico['abonado'] + ma
+                            ne = 'pagado' if (d_unico['precio'] - nt) <= 0.01 else 'abonado'
+                            run_query("UPDATE boletos SET total_abonado=%s, estado=%s WHERE sorteo_id=%s AND numero=%s", 
+                                     (nt, ne, id_sorteo, d_unico['numero']), fetch=False)
+                            run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle, monto) VALUES (%s, 'MOVIL', 'ABONO', %s, %s)",
+                                     (id_sorteo, f"Abono {d_unico['numero']}", ma), fetch=False)
+                            st.success("Abonado"); time.sleep(1); st.rerun()
+
+        # --- CASO 2: MODO VENTA NUEVA (Número buscado está libre) ---
+        elif modo_venta_nueva:
+            fmt_num = "{:02d}" if cantidad_boletos <= 100 else "{:03d}"
+            st.success(f"🟢 El boleto {fmt_num.format(numero_venta)} está DISPONIBLE")
+            
+            with st.form("venta_nueva"):
                 st.write("### 📝 Asignar Boleto")
-                clientes = run_query("SELECT id, nombre_completo, codigo FROM clientes ORDER BY nombre_completo")
                 
+                # Selector de Clientes
+                clientes = run_query("SELECT id, nombre_completo, codigo FROM clientes ORDER BY nombre_completo")
                 opc_cli = {}
                 if clientes:
                     for c in clientes:
@@ -566,7 +656,7 @@ def main():
                         etiqueta = f"{c[1]} | {codigo_display}"
                         opc_cli[etiqueta] = c[0]
                 
-                nom_sel = st.selectbox("👤 Buscar Cliente:", options=list(opc_cli.keys()), index=None, placeholder="Escribe para buscar...")
+                nom_sel = st.selectbox("👤 Cliente:", options=list(opc_cli.keys()), index=None, placeholder="Escribe para buscar...")
                 
                 c_abono, c_precio = st.columns(2)
                 abono = c_abono.number_input("Abono Inicial ($)", value=precio_s, min_value=0.0)
@@ -577,11 +667,20 @@ def main():
                         cid = opc_cli[nom_sel]
                         est = 'pagado' if abono >= precio_s else 'abonado'
                         if abono == 0: est = 'apartado'
-                        run_query("INSERT INTO boletos (sorteo_id, numero, estado, precio, cliente_id, total_abonado, fecha_asignacion) VALUES (%s, %s, %s, %s, %s, %s, NOW())", (id_sorteo, numero, est, precio_s, cid, abono), fetch=False)
-                        run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle, monto) VALUES (%s, 'MOVIL', 'VENTA', %s, %s)", (id_sorteo, f"Venta boleto {numero}", abono), fetch=False)
+                        run_query("INSERT INTO boletos (sorteo_id, numero, estado, precio, cliente_id, total_abonado, fecha_asignacion) VALUES (%s, %s, %s, %s, %s, %s, NOW())", 
+                                 (id_sorteo, numero_venta, est, precio_s, cid, abono), fetch=False)
+                        run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle, monto) VALUES (%s, 'MOVIL', 'VENTA', %s, %s)", 
+                                 (id_sorteo, f"Venta boleto {numero_venta}", abono), fetch=False)
                         st.balloons(); st.success("✅ Venta Exitosa"); time.sleep(1); st.rerun()
                     else: st.error("⚠️ Selecciona un cliente.")
 
+        # --- CASO 3: NADA BUSCADO O NO ENCONTRADO ---
+        else:
+            if busqueda:
+                st.warning("⚠️ No se encontraron resultados.")
+            else:
+                st.info("👈 Usa el buscador arriba para encontrar un Cliente (Ver sus boletos) o un Número (Vender).")
+                
     # ---------------- PESTAÑA CLIENTES ----------------
     with tab_clientes: # <--- ¡ESTO TAMBIÉN FALTABA!
         st.header("Gestión Clientes")
@@ -732,5 +831,4 @@ def main():
 if __name__ == "__main__":
     if check_password():
         main()
-
 
