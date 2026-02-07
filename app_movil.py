@@ -151,7 +151,7 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
     # Datos Sorteo
     y_start = y - 20
     col_izq_x = m_izq
-    col_der_x = centro - 20 
+    col_der_x = centro - 5 
     
     y = y_start
     c.setFont("Helvetica-Bold", 10); c.drawString(col_izq_x, y, "SORTEO:")
@@ -167,7 +167,7 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
     y_prem = y_start
     c.drawString(col_der_x, y_prem, "PREMIOS:")
     y_prem -= 12; c.setFont("Helvetica", 9)
-    etiquetas = ["1er:", "2do:", "3er:", "Ext:", "Ext:"]
+    etiquetas = ["Triple A:", "Triple B:", "Triple Z:", "Especial 1:", "Especial 2:"]
     for i, k in enumerate(lista_claves):
         val = rifa.get(k, "")
         if val:
