@@ -213,9 +213,30 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
     c.drawString(m_izq, y, f"Saldo Pendiente: ${saldo:,.2f}")
     y -= 18; c.setFont("Helvetica", 8)
     
-    # 🔥 CAMBIO 3: Fecha de registro en minúsculas
-    f_reg = fecha_asig if fecha_asig else datetime.now().strftime('%d/%m/%Y %I:%M %p')
-    c.drawString(m_izq, y, f"Fecha de registro: {str(f_reg).lower()}")
+    # --- CAMBIO: FECHA NORMAL (12H) Y MINÚSCULAS ---
+    f_reg_str = ""
+    try:
+        if fecha_asig:
+            # Opción A: Si ya es un objeto de fecha (datetime)
+            if hasattr(fecha_asig, 'strftime'):
+                f_reg_str = fecha_asig.strftime('%d/%m/%Y %I:%M:%S %p').lower()
+            # Opción B: Si es texto (string), intentamos convertirlo
+            else:
+                try:
+                    # Limpiamos decimales si los tiene y convertimos
+                    fecha_limpia = str(fecha_asig).split('.')[0] 
+                    dt_obj = datetime.strptime(fecha_limpia, '%Y-%m-%d %H:%M:%S')
+                    f_reg_str = dt_obj.strftime('%d/%m/%Y %I:%M:%S %p').lower()
+                except:
+                    # Si falla la conversión, mostramos lo que haya en minúsculas
+                    f_reg_str = str(fecha_asig).lower()
+        else:
+            # Si no hay fecha, usamos la actual
+            f_reg_str = datetime.now().strftime('%d/%m/%Y %I:%M:%S %p').lower()
+    except Exception:
+        f_reg_str = str(fecha_asig).lower()
+
+    c.drawString(m_izq, y, f"Fecha de registro: {f_reg_str}")
     
     # Estado
     y_est = y_final
