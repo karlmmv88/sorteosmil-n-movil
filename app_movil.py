@@ -68,8 +68,8 @@ def get_whatsapp_link_exacto(telefono, boleto_num, estado, cliente_nom, sorteo_n
     # Mensaje exacto de PC
     mensaje = (
         f"Hola. Saludos, somos Sorteos Milán!!, aquí te enviamos el comprobante de tu "
-        f"BOLETO: {texto_boleto}, a nombre de '{cliente_nom}' para el sorteo "
-        f"'{sorteo_nom}' del día '{fecha_sorteo}' . ¡Suerte!🍀"
+        f"BOLETO: {texto_boleto}, a nombre de {cliente_nom} para el sorteo "
+        f"'{sorteo_nom}' del día {fecha_sorteo} . ¡Suerte!🍀"
     )
     
     return f"https://wa.me/{tel_clean}?text={urllib.parse.quote(mensaje)}"
@@ -177,7 +177,7 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
     
     # --- SECCIÓN CLIENTE ---
     y_fin_arriba = min(y, y_prem)
-    y_linea = y_fin_arriba - 10
+    y_linea = y_fin_arriba - 4
     
     c.setLineWidth(1)
     c.setStrokeColorRGB(0.70, 0.55, 0.35) 
