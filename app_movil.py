@@ -75,7 +75,7 @@ def get_whatsapp_link_exacto(telefono, boleto_num, estado, cliente_nom, sorteo_n
     return f"https://wa.me/{tel_clean}?text={urllib.parse.quote(mensaje)}"
 
 # ============================================================================
-#  2. PDF DIGITAL (APP MÓVIL - CORREGIDO DORADO)
+#  2. PDF DIGITAL (APP MÓVIL - MINÚSCULAS am/pm)
 # ============================================================================
 def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_boletos=1000):
     buffer = io.BytesIO()
@@ -129,12 +129,14 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
     c.drawRightString(m_der, y-5, f"BOLETO N° {num_str}")
     c.setFillColorRGB(0,0,0)
     
+    # 🔥 CAMBIO 1: Fecha de emisión en minúsculas
+    fecha_emision = datetime.now().strftime('%d/%m/%Y %I:%M %p').lower()
     c.setFont("Helvetica-Oblique", 8)
-    c.drawRightString(m_der, y-25, f"Emitido: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
+    c.drawRightString(m_der, y-25, f"Emitido: {fecha_emision}")
     
     # --- HEADER: LÍNEAS DORADAS ---
     y -= 35
-    c.setStrokeColorRGB(0.70, 0.55, 0.35) # Dorado
+    c.setStrokeColorRGB(0.70, 0.55, 0.35)
     c.line(m_izq, y, m_der, y)
     
     y -= 18
@@ -144,25 +146,28 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
     c.setFillColorRGB(0, 0, 0)
     
     y -= 8
-    c.line(m_izq, y, m_der, y) # Hereda Dorado
+    c.line(m_izq, y, m_der, y) 
     
     # Datos Sorteo
     y_start = y - 20
     col_izq_x = m_izq
-    col_der_x = centro - 5 
+    col_der_x = centro - 20 
     
     y = y_start
     c.setFont("Helvetica-Bold", 10); c.drawString(col_izq_x, y, "SORTEO:")
     c.drawString(col_izq_x + 50, y, rifa['nombre'][:35])
     y -= 15
     c.drawString(col_izq_x, y, "FECHA:")
-    c.drawString(col_izq_x + 50, y, f"{rifa.get('fecha_sorteo','')} {rifa.get('hora_sorteo','')}")
+    
+    # 🔥 CAMBIO 2: Hora del sorteo en minúsculas
+    hora_sorteo = str(rifa.get('hora_sorteo','')).lower()
+    c.drawString(col_izq_x + 50, y, f"{rifa.get('fecha_sorteo','')} {hora_sorteo}")
     
     # Premios
     y_prem = y_start
     c.drawString(col_der_x, y_prem, "PREMIOS:")
     y_prem -= 12; c.setFont("Helvetica", 9)
-    etiquetas = ["Triple A:", "Triple B:", "Triple Z:", "Especial 1:", "Especial 2:"]
+    etiquetas = ["1er:", "2do:", "3er:", "Ext:", "Ext:"]
     for i, k in enumerate(lista_claves):
         val = rifa.get(k, "")
         if val:
@@ -170,12 +175,11 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
             c.drawString(col_der_x, y_prem, f"{lbl} {val[:30]}")
             y_prem -= 12
     
-    # --- SECCIÓN CLIENTE: LÍNEAS DORADAS ---
+    # --- SECCIÓN CLIENTE ---
     y_fin_arriba = min(y, y_prem)
     y_linea = y_fin_arriba - 10
     
     c.setLineWidth(1)
-    # 🔥 CORRECCIÓN: Aquí estaba en negro (0,0,0), lo forzamos a dorado
     c.setStrokeColorRGB(0.70, 0.55, 0.35) 
     c.line(m_izq, y_linea, m_der, y_linea) 
     
@@ -193,14 +197,11 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
     c.drawString(m_izq, y, f"Dirección: {direcc}")
     y -= 10
     
-    # Línea inferior del cliente (Hereda el dorado)
     c.line(m_izq, y, m_der, y) 
     
     # --- SECCIÓN PAGOS ---
     y_final = y - 20
     x_div = total_w * 0.55
-    
-    # Línea Vertical (Hereda el dorado)
     c.line(x_div, y_final + 5, x_div, y_final - 55)
     
     y = y_final
@@ -211,6 +212,8 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
     y -= 12
     c.drawString(m_izq, y, f"Saldo Pendiente: ${saldo:,.2f}")
     y -= 18; c.setFont("Helvetica", 8)
+    
+    # 🔥 CAMBIO 3: Fecha de registro en minúsculas
     f_reg = fecha_asig if fecha_asig else datetime.now().strftime('%d/%m/%Y %I:%M %p')
     c.drawString(m_izq, y, f"Fecha de registro: {str(f_reg).lower()}")
     
@@ -223,9 +226,9 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
     c.drawCentredString(centro_der, y_est - 30, estado_fmt)
     c.setFillColorRGB(0, 0, 0)
     
-    # --- FOOTER (GRIS - EXCEPCIÓN) ---
+    # --- FOOTER ---
     y -= 25
-    c.setStrokeColorRGB(0.7, 0.7, 0.7) # 🔥 Volvemos a Gris solo para el final
+    c.setStrokeColorRGB(0.7, 0.7, 0.7) 
     c.setLineWidth(0.5)
     c.line(m_izq, y, m_der, y)
     
@@ -885,6 +888,4 @@ def main():
 if __name__ == "__main__":
     if check_password():
         main()
-
-
 
