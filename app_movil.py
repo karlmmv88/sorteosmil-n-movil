@@ -520,17 +520,32 @@ def main():
                         st.warning("Boleto liberado."); time.sleep(1); st.rerun()
 
                 st.divider()
-                # --- PDF INDIVIDUAL ---
+                
+                # --- PREPARACIÓN DEL PDF ---
                 datos_pdf = {'cliente': c_nom, 'cedula': c_ced, 'telefono': c_tel, 'direccion': c_dir, 'codigo_cli': c_cod, 'estado': estado, 'precio': b_precio, 'abonado': b_abonado, 'fecha_asignacion': b_fecha}
                 pdf_bytes = generar_pdf_memoria(numero, datos_pdf, config_full, cantidad_boletos)
                 
+                # --- NUEVA LÓGICA DE NOMBRE DE ARCHIVO ---
                 fmt_file = "{:02d}" if cantidad_boletos <= 100 else "{:03d}"
                 num_file = fmt_file.format(numero)
-                nom_archivo = c_nom.split()[0]
-                nombre_final_pdf = f"{num_file}_{nom_archivo}_({estado.upper()}).pdf"
+                
+                partes = c_nom.strip().upper().split()
+                nom_archivo = "CLIENTE"
+                
+                # Regla: Si tiene 2 palabras -> Las 2. Si tiene 3 o más -> 1ra y 3ra.
+                if len(partes) == 2:
+                    nom_archivo = f"{partes[0]} {partes[1]}"
+                elif len(partes) >= 3:
+                    nom_archivo = f"{partes[0]} {partes[2]}"
+                elif len(partes) == 1:
+                    nom_archivo = partes[0]
+                
+                nombre_final_pdf = f"{num_file} {nom_archivo} ({estado.upper()}).pdf"
 
+                # --- INTERFAZ PDF Y WHATSAPP ---
                 c_share1, c_share2 = st.columns(2)
                 c_share1.download_button("📄 PDF", pdf_bytes, nombre_final_pdf, "application/pdf", use_container_width=True)
+                
                 link = get_whatsapp_link_exacto(c_tel, numero, estado, c_nom, nombre_s, str(fecha_s), cantidad_boletos)
                 c_share2.link_button("📲 WhatsApp", link, use_container_width=True)
 
@@ -663,14 +678,14 @@ def main():
                             tel_clean = "".join(filter(str.isdigit, str(tel_raw)))
                             if len(tel_clean) == 10: tel_clean = "58" + tel_clean
                             elif len(tel_clean) == 11 and tel_clean.startswith("0"): tel_clean = "58" + tel_clean[1:]
-                            # Uso explícito de quote para asegurar que el trebol pase
-                            link = f"https://wa.me/{tel_clean}?text={urllib.parse.quote(msg_wa)}"
+                            
+                            # 🔥 CORRECCIÓN: Usamos api.whatsapp.com para que el móvil lea bien el emoji
+                            link = f"https://api.whatsapp.com/send?phone={tel_clean}&text={urllib.parse.quote(msg_wa)}"
                             col_wa.link_button("📲 Enviar WhatsApp", link, use_container_width=True)
                         else:
                             col_wa.warning("Sin teléfono")
 
                         # --- PDFS SUELTOS (UNO POR BOTÓN) ---
-                        # Generamos un botón por cada boleto seleccionado
                         with col_pdf:
                             st.write("**Descargar PDFs:**")
                             for d in datos_sel:
@@ -680,11 +695,25 @@ def main():
                                     'estado': d['estado'], 'precio': d['precio'], 'abonado': d['abonado'], 'fecha_asignacion': d['fecha']
                                 }
                                 pdf_data = generar_pdf_memoria(d['numero'], info_pdf, config_full, cantidad_boletos)
-                                n_file = f"{fmt_num.format(d['numero'])}_{d['estado'].upper()}.pdf"
                                 
-                                # Usamos key único para que no de error
+                                # --- NUEVA LÓGICA DE NOMBRE DE ARCHIVO (REPLICADA) ---
+                                num_f = fmt_num.format(d['numero'])
+                                
+                                partes = datos_c['nombre'].strip().upper().split()
+                                nom_archivo = "CLIENTE"
+                                
+                                # Regla: 2 palabras -> 2. 3 o más -> 1ra y 3ra.
+                                if len(partes) == 2:
+                                    nom_archivo = f"{partes[0]} {partes[1]}"
+                                elif len(partes) >= 3:
+                                    nom_archivo = f"{partes[0]} {partes[2]}"
+                                elif len(partes) == 1:
+                                    nom_archivo = partes[0]
+                                
+                                n_file = f"{num_f} {nom_archivo} ({d['estado'].upper()}).pdf"
+                                
                                 st.download_button(
-                                    f"📄 PDF {fmt_num.format(d['numero'])}", 
+                                    f"📄 PDF {num_f}", 
                                     pdf_data, n_file, "application/pdf", 
                                     key=f"btn_down_{d['numero']}", 
                                     use_container_width=True
