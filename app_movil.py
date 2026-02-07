@@ -547,7 +547,7 @@ def main():
                     c_est[1].metric("Precio", f"${b_precio}")
                     c_est[2].metric("Deuda", f"${b_precio-b_abonado}")
                     
-                    with st.expander("🛠️ Opciones de Gestión", expanded=True):
+                    with st.expander("🛠 Opciones de Gestión", expanded=True):
                         # ABONOS
                         if (b_precio - b_abonado) > 0.01:
                             ma = st.number_input("Monto Abono ($)", min_value=0.0, max_value=(b_precio-b_abonado))
@@ -562,7 +562,7 @@ def main():
                         # ACCIONES
                         c_btn1, c_btn2, c_btn3 = st.columns(3)
                         if estado != 'apartado': 
-                            if c_btn1.button("🟡 APARTAR", use_container_width=True):
+                            if c_btn1.button("📌 APARTADO", use_container_width=True):
                                 run_query("UPDATE boletos SET estado='apartado', total_abonado=0 WHERE id=%s", (b_id,), fetch=False)
                                 run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle) VALUES (%s, 'MOVIL', 'REVERTIR_APARTADO', %s)", (id_sorteo, f"Marcado como apartado {numero}"), fetch=False)
                                 st.rerun()
@@ -677,7 +677,7 @@ def main():
                 if entrada_boletos: st.warning("Formato inválido o números fuera de rango.")
 
         # ============================================================
-        #  MODO B: POR CLIENTE (Gestión Masiva - PDFs Sueltos)
+        #  MODO B: POR CLIENTE (Gestión Masiva - Visualización Color)
         # ============================================================
         else:
             # 1. Buscador de Clientes
@@ -697,7 +697,6 @@ def main():
                     opciones_cliente[etiqueta] = c[0]
                     datos_cliente_map[c[0]] = {'nombre': c[1], 'telefono': c[2], 'cedula': c[3], 'direccion': c[4], 'codigo': c[5]}
             
-            # 4. CAMBIO: Etiqueta actualizada
             cliente_sel = st.selectbox("👤 Buscar Cliente (Nombre/Código):", options=list(opciones_cliente.keys()), index=None, placeholder="Escribe el nombre...")
             
             if cliente_sel:
@@ -715,21 +714,46 @@ def main():
                 if boletos_cli:
                     st.info(f"📋 Gestionando boletos de: **{datos_c['nombre']}**")
                     
-                    # Preparar opciones para Multiselect
-                    opc_boletos = {}
+                    # --- NUEVO: PANEL VISUAL DE BOLETOS CON COLORES ---
+                    st.write("Estado de sus boletos:")
                     fmt_num = "{:02d}" if cantidad_boletos <= 100 else "{:03d}"
                     
+                    # Creamos columnas para mostrar los boletos como tarjetas
+                    cols_vis = st.columns(4) 
+                    
+                    for i, b in enumerate(boletos_cli):
+                        num, est, pre, abo, f_asig = b
+                        
+                        # Definir color y emoji según estado
+                        color_txt = "grey"
+                        emoji = "⚪"
+                        if est == 'abonado': 
+                            color_txt = "blue"
+                            emoji = "🔵"
+                        elif est == 'apartado': 
+                            color_txt = "orange" # Usamos orange para simular amarillo/dorado visible
+                            emoji = "🟡"
+                        elif est == 'pagado': 
+                            color_txt = "grey"
+                            emoji = "⚪"
+                            
+                        # Mostrar boleto coloreado en la grilla
+                        with cols_vis[i % 4]:
+                            st.markdown(f":{color_txt}[**🎟️ {fmt_num.format(num)}**]<br>{emoji} {est.upper()}", unsafe_allow_html=True)
+                    
+                    st.divider()
+
+                    # Preparar opciones para el Selector (Con Emojis para ayudar)
+                    opc_boletos = {}
                     for b in boletos_cli:
                         num, est, pre, abo, f_asig = b
-                        pre = float(pre or 0); abo = float(abo or 0)
                         
-                        # 5. CAMBIO: Colores con Emojis
-                        emoji_estado = "❓"
-                        if est == 'abonado': emoji_estado = "🔵"   # Azul
-                        elif est == 'apartado': emoji_estado = "🟡" # Amarillo
-                        elif est == 'pagado': emoji_estado = "⚪"   # Gris/Blanco
+                        emoji_sel = "❓"
+                        if est == 'abonado': emoji_sel = "🔵"
+                        elif est == 'apartado': emoji_sel = "🟡"
+                        elif est == 'pagado': emoji_sel = "⚪"
                         
-                        lbl = f"{emoji_estado} {fmt_num.format(num)} ({est.upper()})"
+                        lbl = f"{emoji_sel} {fmt_num.format(num)} ({est.upper()})"
                         opc_boletos[lbl] = {'numero': num, 'estado': est, 'precio': pre, 'abonado': abo, 'fecha': f_asig}
                     
                     seleccion = st.multiselect(
@@ -751,7 +775,7 @@ def main():
                                     run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle) VALUES (%s, 'MOVIL', 'PAGO_MASIVO', %s)", (id_sorteo, f"Pago boleto {d['numero']}"), fetch=False)
                             st.success("Pagados"); time.sleep(1); st.rerun()
                             
-                        if c_acc2.button("🟡 APARTAR", use_container_width=True):
+                        if c_acc2.button("📌 APARTAR", use_container_width=True):
                             for d in datos_sel:
                                 run_query("UPDATE boletos SET estado='apartado', total_abonado=0 WHERE sorteo_id=%s AND numero=%s", (id_sorteo, d['numero']), fetch=False)
                             st.success("Apartados"); time.sleep(1); st.rerun()
@@ -792,7 +816,7 @@ def main():
                         else:
                             col_wa.warning("Sin teléfono")
 
-                        # --- PDFS SUELTOS (UNO POR BOTÓN) ---
+                        # --- PDFS SUELTOS ---
                         with col_pdf:
                             st.write("**Descargar PDFs:**")
                             for d in datos_sel:
