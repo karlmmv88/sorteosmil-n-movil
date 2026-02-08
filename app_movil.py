@@ -677,7 +677,7 @@ def main():
                 if entrada_boletos: st.warning("Formato inválido o números fuera de rango.")
 
         # ============================================================
-        #  MODO B: POR CLIENTE (Gestión Masiva - Visualización Color)
+        #  MODO B: POR CLIENTE (Gestión Visual con Botones Interactivos)
         # ============================================================
         else:
             # 1. Buscador de Clientes
@@ -703,7 +703,7 @@ def main():
                 cid = opciones_cliente[cliente_sel]
                 datos_c = datos_cliente_map[cid]
                 
-                # 2. Cargar Boletos
+                # 2. Cargar Boletos del Cliente
                 boletos_cli = run_query("""
                     SELECT numero, estado, precio, total_abonado, fecha_asignacion
                     FROM boletos 
@@ -713,126 +713,138 @@ def main():
                 
                 if boletos_cli:
                     st.info(f"📋 Gestionando boletos de: **{datos_c['nombre']}**")
-                    
-    # --- NUEVO: PANEL VISUAL DE BOLETOS CON COLORES (SVG) ---
-                    st.write("Estado de sus boletos:")
                     fmt_num = "{:02d}" if cantidad_boletos <= 100 else "{:03d}"
-                    
-                    # Creamos columnas para mostrar los boletos como tarjetas
-                    cols_vis = st.columns(4) 
+
+                    # ---------------------------------------------------------
+                    #  A. PANEL INFORMATIVO (Estado de sus boletos - NO CLIC)
+                    # ---------------------------------------------------------
+                    st.write("### 🎫 Estado Actual (Informativo)")
+                    cols_info = st.columns(4)
                     
                     for i, b in enumerate(boletos_cli):
                         num, est, pre, abo, f_asig = b
                         
-                        # 1. Definir colores exactos para el SVG
-                        hex_color = "#e0e0e0" # Gris claro (Default)
-                        color_txt = "grey"
+                        # Colores para el borde/fondo visual
+                        color_border = "#e0e0e0"
+                        if est == 'abonado': color_border = "#1a73e8" # Azul
+                        elif est == 'apartado': color_border = "#ff9800" # Naranja
+                        elif est == 'pagado': color_border = "#9e9e9e" # Gris
                         
-                        if est == 'abonado': 
-                            hex_color = "#1a73e8" # Azul
-                            color_txt = "blue"
-                        elif est == 'apartado': 
-                            hex_color = "#ffc107" # Amarillo/Dorado
-                            color_txt = "orange"
-                        elif est == 'pagado': 
-                            hex_color = "#9e9e9e" # Gris Oscuro
-                            color_txt = "grey"
-
-                        # 2. Crear el Círculo SVG
-                        svg_circle = f'''
-                        <svg width="20" height="20" style="vertical-align: middle; margin-bottom: 2px;">
-                            <circle cx="10" cy="10" r="8" fill="{hex_color}" stroke="gray" stroke-width="1" />
-                        </svg>
-                        '''
-                            
-                        # 3. Renderizar (Círculo + Texto)
-                        with cols_vis[i % 4]:
-                            st.markdown(
-                                f"{svg_circle} :{color_txt}[**{fmt_num.format(num)}**]<br>"
-                                f"<span style='font-size:12px; color: #555'>{est.upper()}</span>", 
-                                unsafe_allow_html=True
-                            )
+                        # Renderizar tarjeta "falsa" con HTML/CSS
+                        html_card = f"""
+                        <div style="
+                            border: 2px solid {color_border};
+                            border-radius: 8px;
+                            padding: 10px;
+                            text-align: center;
+                            background-color: #f9f9f9;
+                            margin-bottom: 10px;
+                        ">
+                            <strong style="font-size: 18px; color: {color_border}">{fmt_num.format(num)}</strong><br>
+                            <span style="font-size: 12px; color: #555">{est.upper()}</span>
+                        </div>
+                        """
+                        with cols_info[i % 4]:
+                            st.markdown(html_card, unsafe_allow_html=True)
                     
                     st.divider()
 
-                    # Preparar opciones para el Selector (Con Emojis de Cuadrados)
-                    opc_boletos = {}
-                    for b in boletos_cli:
+                    # ---------------------------------------------------------
+                    #  B. PANEL DE SELECCIÓN (Botones Interactivos)
+                    # ---------------------------------------------------------
+                    st.write("### ✅ Toca los boletos para procesar:")
+                    
+                    # Inicializar estado de selección si cambia el cliente
+                    if 'seleccion_actual' not in st.session_state: st.session_state.seleccion_actual = []
+                    if 'cliente_previo' not in st.session_state or st.session_state.cliente_previo != cid:
+                        st.session_state.seleccion_actual = [] # Reset al cambiar cliente
+                        st.session_state.cliente_previo = cid
+
+                    # Crear Grilla de Botones
+                    cols_sel = st.columns(5) # 5 boletos por fila
+                    
+                    datos_boletos_map = {} # Mapa para recuperar datos luego
+
+                    for i, b in enumerate(boletos_cli):
                         num, est, pre, abo, f_asig = b
+                        num_fmt = fmt_num.format(num)
+                        datos_boletos_map[num] = {'numero': num, 'estado': est, 'precio': pre, 'abonado': abo, 'fecha': f_asig}
                         
-                        # Usamos emojis de CUADRADOS para uniformidad
-                        emoji_sel = "⬜" 
-                        if est == 'abonado': 
-                            emoji_sel = "🟦" # Cuadrado Azul
-                        elif est == 'apartado': 
-                            emoji_sel = "🟧" # Cuadrado Naranja
-                        elif est == 'pagado': 
-                            emoji_sel = "⬜" # Cuadrado Blanco
+                        es_seleccionado = num in st.session_state.seleccion_actual
                         
-                        lbl = f"{emoji_sel} {fmt_num.format(num)} ({est.upper()})"
-                        opc_boletos[lbl] = {'numero': num, 'estado': est, 'precio': pre, 'abonado': abo, 'fecha': f_asig}
-                    
-                    seleccion = st.multiselect(
-                        "✅ Selecciona los boletos a procesar:",
-                        options=list(opc_boletos.keys()),
-                        default=list(opc_boletos.keys()) 
-                    )
-                    
-                    if seleccion:
-                        datos_sel = [opc_boletos[k] for k in seleccion]
-                        numeros_sel = [d['numero'] for d in datos_sel]
+                        # Definir etiqueta y estilo del botón
+                        label_btn = f"✔ {num_fmt}" if es_seleccionado else f"{num_fmt}"
+                        type_btn = "primary" if es_seleccionado else "secondary" # Primary suele ser Rojo/ColorTema
                         
-                        # --- BOTONES ACCIÓN ---
+                        # Dibujar botón
+                        with cols_sel[i % 5]:
+                            # Si se presiona, alternamos su estado en la lista
+                            if st.button(label_btn, key=f"btn_sel_{num}", type=type_btn, use_container_width=True):
+                                if num in st.session_state.seleccion_actual:
+                                    st.session_state.seleccion_actual.remove(num)
+                                else:
+                                    st.session_state.seleccion_actual.append(num)
+                                st.rerun() # Recargar para actualizar color visual
+
+                    # ---------------------------------------------------------
+                    #  C. ACCIONES SOBRE LA SELECCIÓN
+                    # ---------------------------------------------------------
+                    if st.session_state.seleccion_actual:
+                        numeros_sel = sorted(st.session_state.seleccion_actual)
+                        datos_sel = [datos_boletos_map[n] for n in numeros_sel]
+                        
+                        st.write(f"**Seleccionados ({len(numeros_sel)}):** {', '.join([fmt_num.format(n) for n in numeros_sel])}")
+                        
+                        # --- BOTONES DE ACCIÓN ---
                         c_acc1, c_acc2, c_acc3 = st.columns(3)
-                        if c_acc1.button("✅ PAGAR", use_container_width=True):
+                        
+                        if c_acc1.button("✅ PAGAR SELECCIÓN", use_container_width=True):
                             for d in datos_sel:
                                 if d['estado'] != 'pagado':
                                     run_query("UPDATE boletos SET estado='pagado', total_abonado=%s WHERE sorteo_id=%s AND numero=%s", (d['precio'], id_sorteo, d['numero']), fetch=False)
                                     run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle) VALUES (%s, 'MOVIL', 'PAGO_MASIVO', %s)", (id_sorteo, f"Pago boleto {d['numero']}"), fetch=False)
-                            st.success("Pagados"); time.sleep(1); st.rerun()
+                            st.session_state.seleccion_actual = [] # Limpiar selección
+                            st.success("Pagados correctamente"); time.sleep(1); st.rerun()
                             
-                        if c_acc2.button("📌 APARTAR", use_container_width=True):
+                        if c_acc2.button("📌 APARTAR SELECCIÓN", use_container_width=True):
                             for d in datos_sel:
                                 run_query("UPDATE boletos SET estado='apartado', total_abonado=0 WHERE sorteo_id=%s AND numero=%s", (id_sorteo, d['numero']), fetch=False)
-                            st.success("Apartados"); time.sleep(1); st.rerun()
+                            st.session_state.seleccion_actual = []
+                            st.success("Apartados correctamente"); time.sleep(1); st.rerun()
 
-                        if c_acc3.button("🗑️ LIBERAR", type="primary", use_container_width=True):
+                        if c_acc3.button("🗑️ LIBERAR SELECCIÓN", type="primary", use_container_width=True):
                             for d in datos_sel:
                                 run_query("DELETE FROM boletos WHERE sorteo_id=%s AND numero=%s", (id_sorteo, d['numero']), fetch=False)
                                 run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle) VALUES (%s, 'MOVIL', 'LIBERAR_MASIVO', %s)", (id_sorteo, f"Liberado boleto {d['numero']}"), fetch=False)
-                            st.warning("Liberados"); time.sleep(1); st.rerun()
+                            st.session_state.seleccion_actual = []
+                            st.warning("Liberados correctamente"); time.sleep(1); st.rerun()
 
                         st.divider()
                         
-                        # --- WHATSAPP ---
+                        # --- WHATSAPP Y PDF (Para la selección) ---
+                        col_wa, col_pdf = st.columns([1, 1])
+                        
+                        # WhatsApp
                         partes_msg = []
                         for d in datos_sel:
                             n_s = fmt_num.format(d['numero'])
                             e_s = "PAGADO" if d['estado']=='pagado' else ("ABONADO" if d['estado']=='abonado' else "APARTADO")
                             partes_msg.append(f"N° {n_s} ({e_s})")
-                        
                         txt_boletos = ", ".join(partes_msg)
-                        
                         msg_wa = (
                             f"Hola. Saludos, somos Sorteos Milán!!, aquí te enviamos los comprobantes de tus "
                             f"BOLETOS: {txt_boletos}, a nombre de '{datos_c['nombre']}' para el sorteo "
                             f"'{nombre_s}' del día '{fecha_s}' . ¡Suerte!🍀"
                         )
-                        
-                        col_wa, col_pdf = st.columns([1, 1])
-                        
                         tel_raw = datos_c['telefono']
                         if tel_raw:
                             tel_clean = "".join(filter(str.isdigit, str(tel_raw)))
                             if len(tel_clean) == 10: tel_clean = "58" + tel_clean
                             elif len(tel_clean) == 11 and tel_clean.startswith("0"): tel_clean = "58" + tel_clean[1:]
-                            
                             link = f"https://api.whatsapp.com/send?phone={tel_clean}&text={urllib.parse.quote(msg_wa)}"
-                            col_wa.link_button("📲 Enviar WhatsApp", link, use_container_width=True)
-                        else:
-                            col_wa.warning("Sin teléfono")
-
-                        # --- PDFS SUELTOS ---
+                            col_wa.link_button("📲 WhatsApp Selección", link, use_container_width=True)
+                        
+                        # PDFs
                         with col_pdf:
                             st.write("**Descargar PDFs:**")
                             for d in datos_sel:
@@ -842,22 +854,14 @@ def main():
                                     'estado': d['estado'], 'precio': d['precio'], 'abonado': d['abonado'], 'fecha_asignacion': d['fecha']
                                 }
                                 pdf_data = generar_pdf_memoria(d['numero'], info_pdf, config_full, cantidad_boletos)
-                                
                                 num_f = fmt_num.format(d['numero'])
                                 partes = datos_c['nombre'].strip().upper().split()
                                 nom_archivo = f"{partes[0]} {partes[2]}" if len(partes) >= 4 else (f"{partes[0]} {partes[1]}" if len(partes) >= 2 else partes[0])
-                                
                                 n_file = f"{num_f} {nom_archivo} ({d['estado'].upper()}).pdf"
-                                
-                                st.download_button(
-                                    f"📄 PDF {num_f}", 
-                                    pdf_data, n_file, "application/pdf", 
-                                    key=f"btn_down_{d['numero']}", 
-                                    use_container_width=True
-                                )
+                                st.download_button(f"📄 {num_f}", pdf_data, n_file, "application/pdf", key=f"btn_down_{d['numero']}", use_container_width=True)
 
                     else:
-                        st.info("👆 Selecciona boletos de la lista para ver acciones.")
+                        st.info("👆 Toca los botones de arriba para seleccionar boletos y ver acciones.")
                         
     # ---------------- PESTAÑA CLIENTES ----------------
     with tab_clientes: # <--- ¡ESTO TAMBIÉN FALTABA!
