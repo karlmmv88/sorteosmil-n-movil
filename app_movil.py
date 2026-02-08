@@ -599,7 +599,7 @@ def main():
                     st.divider()
 
                     # ---------------------------------------------------------
-                    #  GESTIÓN INDIVIDUAL
+                    #  GESTIÓN INDIVIDUAL (1 Boleto)
                     # ---------------------------------------------------------
                     if len(lista_busqueda) == 1:
                         numero = lista_busqueda[0]
@@ -611,29 +611,24 @@ def main():
                             
                             st.info(f"👤 **Cliente:** {c_nom} | 📞 {c_tel}")
                             
-                            # --- BOTONES DE ACCIÓN (Lógica Flexible) ---
+                            # --- BOTONES DE ACCIÓN ---
                             c_btn1, c_btn2, c_btn3 = st.columns(3)
                             
-                            # Botón 1: Pagar (Solo si falta pagar)
                             if estado != 'pagado':
                                 if c_btn1.button("✅ PAGAR TOTAL", use_container_width=True, key="btn_pag_ind"):
                                     run_query("UPDATE boletos SET estado='pagado', total_abonado=%s WHERE id=%s", (b_precio, b_id), fetch=False)
                                     st.rerun()
 
-                            # Botón 2: Apartar (VISIBLE SIEMPRE, excepto si ya es apartado)
-                            # Permite revertir un 'Pagado' a 'Apartado' (Deuda vuelve a 100%)
                             if estado != 'apartado':
                                 if c_btn2.button("📌 APARTAR", use_container_width=True, key="btn_aprt"):
-                                    # Al apartar, reseteamos el abono a 0
                                     run_query("UPDATE boletos SET estado='apartado', total_abonado=0 WHERE id=%s", (b_id,), fetch=False)
                                     st.success("Revertido a Apartado"); time.sleep(1); st.rerun()
 
-                            # Botón 3: Liberar (SIEMPRE VISIBLE)
                             if c_btn3.button("🗑️ LIBERAR", type="primary", use_container_width=True, key="btn_lib_ind"):
                                 run_query("DELETE FROM boletos WHERE id=%s", (b_id,), fetch=False)
                                 st.warning("Liberado"); time.sleep(1); st.rerun()
                             
-                            # ZONA ABONO (Solo si hay deuda y no está pagado)
+                            # ZONA ABONO
                             if estado != 'pagado' and (b_precio - b_abonado) > 0.01:
                                 st.divider()
                                 with st.container(border=True):
@@ -649,7 +644,7 @@ def main():
                                             st.success("✅ Abonado"); time.sleep(1); st.rerun()
 
                         else:
-                            # BOLETO DISPONIBLE
+                            # BOLETO DISPONIBLE (INDIVIDUAL)
                             with st.form("venta_single"):
                                 st.write(f"### 📝 Vender Boleto {fmt_num.format(numero)}")
                                 clientes = run_query("SELECT id, nombre_completo, codigo FROM clientes ORDER BY nombre_completo")
@@ -669,14 +664,8 @@ def main():
                                         st.success("✅ Asignado"); time.sleep(1); st.rerun()
                                     else: st.error("⚠️ Falta cliente")
                     
-                    elif len(lista_busqueda) > 1:
-                        if [n for n in lista_busqueda if n in mapa_resultados]:
-                            st.error("❌ Hay boletos ocupados en la lista. Búscalos individualmente.")
-                        else:
-                            st.info("Venta masiva disponible")
-
                     # ---------------------------------------------------------
-                    #  C. LÓGICA DE GESTIÓN (MÚLTIPLE)
+                    #  GESTIÓN MÚLTIPLE (Más de 1 boleto)
                     # ---------------------------------------------------------
                     elif len(lista_busqueda) > 1:
                         # Verificamos si alguno ya está ocupado
@@ -715,7 +704,7 @@ def main():
                                     if nom_sel:
                                         cid = opc_cli[nom_sel]
                                         
-                                        # Determinar estado según el abono unitario vs precio unitario
+                                        # Determinar estado
                                         est = 'pagado' if abono_unit >= precio_s else 'abonado'
                                         if abono_unit == 0: est = 'apartado'
                                         
@@ -725,9 +714,6 @@ def main():
                                                 INSERT INTO boletos (sorteo_id, numero, estado, precio, cliente_id, total_abonado, fecha_asignacion) 
                                                 VALUES (%s, %s, %s, %s, %s, %s, NOW())
                                             """, (id_sorteo, n_bol, est, precio_s, cid, abono_unit), fetch=False)
-                                            
-                                            # Opcional: Registrar en historial (si tienes tabla historial)
-                                            # run_query("INSERT INTO historial ...") 
 
                                         st.success("✅ Boletos asignados correctamente")
                                         time.sleep(1)
