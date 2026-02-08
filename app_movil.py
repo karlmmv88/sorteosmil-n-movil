@@ -523,18 +523,17 @@ def main():
         except Exception as e:
             st.error(f"Error calculando totales: {e}")
 
-        # 4. Botón Descarga
+    # 4. Botón Descarga
         nombre_archivo = "Tabla_ConOcupados.jpg" if ver_ocupados else "Tabla_Limpia.jpg"
         st.download_button("⬇️ DESCARGAR IMAGEN", img_bytes, nombre_archivo, "image/jpeg", use_container_width=True)
         
         st.divider()
 
-        # --- SELECTOR DE MODO ---
         modo = st.radio("📍 Selecciona opción:", ["🔢 Por N° de Boleto", "👤 Por Cliente"], horizontal=True)
         st.write("") # Espacio visual
 
         # ============================================================
-        #  MODO A: POR NÚMERO
+        #  MODO A: POR NÚMERO (Botones Flexibles - Corrección de Pagos)
         # ============================================================
         if modo == "🔢 Por N° de Boleto":
             c1, c2 = st.columns([2,1])
