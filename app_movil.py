@@ -491,16 +491,34 @@ def main():
         # --- SECCIÓN 1: VISUALIZACIÓN EN VIVO ---
         st.write("### 📊 Estado del Sorteo")
         ver_ocupados = st.checkbox("Mostrar Ocupados (Amarillo)", value=True)
+        
+        # Generar Imagen
         img_bytes = generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, mostrar_ocupados=ver_ocupados)
         st.image(img_bytes, caption="Actualizado en tiempo real", use_container_width=True)
+        
+        # --- NUEVO: RESUMEN PEQUEÑO DEBAJO DE LA IMAGEN ---
+        # Consultamos cantidad de ocupados y suma total de sus precios
+        datos_resumen = run_query("SELECT COUNT(*), SUM(precio) FROM boletos WHERE sorteo_id = %s", (id_sorteo,))
+        total_asignados = 0
+        total_recaudar = 0.0
+        
+        if datos_resumen:
+            total_asignados = datos_resumen[0][0] or 0
+            total_recaudar = float(datos_resumen[0][1] or 0)
+            
+        # Mostramos en una sola línea, pequeño (caption) y centrado visualmente
+        st.markdown(
+            f"<p style='text-align: center; color: #666; font-size: 14px; margin-top: -10px;'>"
+            f"🎟️ Asignados: <b>{total_asignados}</b> &nbsp;|&nbsp; 💰 Total a Recaudar: <b>${total_recaudar:,.2f}</b>"
+            f"</p>", 
+            unsafe_allow_html=True
+        )
+        
+        # Botón Descarga
         nombre_archivo = "Tabla_ConOcupados.jpg" if ver_ocupados else "Tabla_Limpia.jpg"
         st.download_button("⬇️ DESCARGAR IMAGEN", img_bytes, nombre_archivo, "image/jpeg", use_container_width=True)
         
-        st.divider() 
-
-        # --- SELECTOR DE MODO ---
-        modo = st.radio("🔍 Método de Búsqueda:", ["🔢 Por N° de Boleto", "👤 Por Cliente"], horizontal=True)
-        st.write("") 
+        st.divider()
 
         # ============================================================
         #  MODO A: POR NÚMERO (Botones Flexibles - Corrección de Pagos)
