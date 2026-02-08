@@ -602,7 +602,9 @@ def main():
                     st.divider()
 
 
+# ---------------------------------------------------------
                     #  GESTIÓN INDIVIDUAL (1 Boleto)
+                    # ---------------------------------------------------------
                     if len(lista_busqueda) == 1:
                         numero = lista_busqueda[0]
                         str_num = fmt_num.format(numero)
@@ -647,72 +649,34 @@ def main():
                             
                             st.divider()
 
-                            # --- SECCIÓN PDF Y WHATSAPP ---
+                            # --- SECCIÓN PDF Y WHATSAPP (CORREGIDA) ---
                             col_wa, col_pdf = st.columns([1, 1])
                             
-                            # 1. Lógica de Nombre (Con guiones bajos)
+                            # 1. Lógica de Nombre
                             partes_nom = c_nom.strip().upper().split()
                             if len(partes_nom) >= 3:
-                                nom_archivo = f"{partes_nom[0]}_{partes_nom[2]}"
+                                nom_archivo = f"{partes_nom[0]} {partes_nom[2]}"
                             elif len(partes_nom) == 2:
-                                nom_archivo = f"{partes_nom[0]}_{partes_nom[1]}"
+                                nom_archivo = f"{partes_nom[0]} {partes_nom[1]}"
                             else:
-                                nom_archivo = partes_nom[0]
+                                nom_archivo = partes_nom[0] if partes_nom else "CLIENTE"
                             
                             n_file = f"{str_num} {nom_archivo} ({estado.upper()}).pdf"
 
                             # 2. PDF
                             info_pdf = {'cliente': c_nom, 'cedula': c_ced, 'telefono': c_tel, 'direccion': c_dir, 'codigo_cli': c_cod, 'estado': estado, 'precio': b_precio, 'abonado': b_abonado, 'fecha_asignacion': b_fecha}
                             pdf_data = generar_pdf_memoria(numero, info_pdf, config_full, cantidad_boletos)
-                            col_pdf.download_button(f"📄 PDF", pdf_data, n_file, "application/pdf", use_container_width=True)
-
-                            # 3. WhatsApp (CORREGIDO: Llamamos a la función, NO la definimos aquí)
-                            link_wa = get_whatsapp_link_exacto(c_tel, numero, estado, c_nom, nombre_s, str(fecha_s), cantidad_boletos)
                             
-                            if link_wa:
-                                col_wa.link_button("📲 WhatsApp", link_wa, use_container_width=True)
-                            else:
-                                col_wa.warning("Sin teléfono")
+                            with col_pdf:
+                                st.download_button(f"📄 PDF", pdf_data, n_file, "application/pdf", use_container_width=True)
 
-                            # 2. PDF
-                            info_pdf = {'cliente': c_nom, 'cedula': c_ced, 'telefono': c_tel, 'direccion': c_dir, 'codigo_cli': c_cod, 'estado': estado, 'precio': b_precio, 'abonado': b_abonado, 'fecha_asignacion': b_fecha}
-                            pdf_data = generar_pdf_memoria(numero, info_pdf, config_full, cantidad_boletos)
-                            col_pdf.download_button(f"📄 PDF", pdf_data, n_file, "application/pdf", use_container_width=True)
-
-                            # 3. WhatsApp
-                            def get_whatsapp_link_exacto(telefono, boleto_num, estado, cliente_nom, sorteo_nom, fecha_sorteo, cantidad_boletos=1000):
-                                if not telefono: return ""
-                                
-                                # Limpieza básica
-                                tel_clean = "".join(filter(str.isdigit, str(telefono)))
-                                
-                                # Lógica Venezuela (Si cumple, ajustamos. Si no, dejamos el número como viene para extranjeros)
-                                if len(tel_clean) == 10: 
-                                    tel_clean = "58" + tel_clean
-                                elif len(tel_clean) == 11 and tel_clean.startswith("0"): 
-                                    tel_clean = "58" + tel_clean[1:]
-                                # Si no es de 10 u 11 dígitos, asumimos que es internacional y lo dejamos tal cual.
-                                
-                                # Formateo de Estado
-                                est_str = estado.upper()
-                                if estado == 'pagado': est_str = "PAGADO"
-                                elif estado == 'abonado': est_str = "ABONADO"
-                                elif estado == 'apartado': est_str = "APARTADO"
-                                
-                                fmt_num = "{:02d}" if cantidad_boletos <= 100 else "{:03d}"
-                                num_str = fmt_num.format(boleto_num)
-                                
-                                texto_boleto = f"N° {num_str} ({est_str})"
-                                
-                                # Mensaje con Emoji
-                                mensaje = (
-                                    f"Hola. Saludos, somos Sorteos Milán!!, aquí te enviamos el comprobante de tu "
-                                    f"BOLETO: {texto_boleto}, a nombre de {cliente_nom} para el sorteo "
-                                    f"'{sorteo_nom}' del día {fecha_sorteo} . ¡Suerte!🍀"
-                                )
-                                
-                                # Usamos api.whatsapp.com que carga mejor los emojis
-                                return f"https://api.whatsapp.com/send?phone={tel_clean}&text={urllib.parse.quote(mensaje)}"
+                            # 3. WhatsApp (Usando la función GLOBAL, sin redefinirla)
+                            with col_wa:
+                                link_wa = get_whatsapp_link_exacto(c_tel, numero, estado, c_nom, nombre_s, str(fecha_s), cantidad_boletos)
+                                if link_wa:
+                                    st.link_button("📲 WhatsApp", link_wa, use_container_width=True)
+                                else:
+                                    st.warning("Sin teléfono")
 
                         else:
                             # BOLETO DISPONIBLE
