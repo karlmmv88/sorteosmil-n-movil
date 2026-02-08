@@ -498,19 +498,17 @@ def main():
         st.write("") 
 
         # ============================================================
-        #  MODO A: POR NÚMERO (Individual o Múltiple)
+        #  MODO A: POR NÚMERO (Visualización Unificada)
         # ============================================================
         if modo == "🔢 Por N° de Boleto":
             c1, c2 = st.columns([2,1])
-            # 1. CAMBIO: Input de texto para permitir comas
             entrada_boletos = c1.text_input("Boleto(s) N° (Ej: 10, 25):", placeholder="Escribe números...")
             
-            # Procesar entrada (convertir a lista de enteros)
+            # Procesar entrada
             lista_busqueda = []
             if entrada_boletos:
                 try:
-                    # Separa por comas y limpia espacios
-                    partes = entrada_busqueda = entrada_boletos.replace('-', ' ').replace('/', ' ').split(',')
+                    partes = entrada_boletos.replace('-', ' ').replace('/', ' ').split(',')
                     for p in partes:
                         if p.strip().isdigit():
                             val = int(p.strip())
@@ -518,163 +516,220 @@ def main():
                                 lista_busqueda.append(val)
                 except: pass
 
-            btn_buscar = c2.button("🔍 Buscar/Ver", use_container_width=True)
+            if c2.button("🔍 Buscar", use_container_width=True) or lista_busqueda:
+                if not lista_busqueda:
+                    st.warning("Introduce un número válido.")
+                else:
+                    # 1. RECUPERAR DATOS DE TODOS LOS NÚMEROS BUSCADOS
+                    # (Hacemos una query para ver cuáles están ocupados)
+                    lista_str = ",".join(map(str, lista_busqueda))
+                    placeholders = ",".join(["%s"] * len(lista_busqueda))
+                    
+                    # Traemos datos de los que existen en BD (Ocupados)
+                    query = f"""
+                        SELECT b.numero, b.estado, b.precio, b.total_abonado, b.fecha_asignacion, b.id, b.cliente_id,
+                               c.nombre_completo, c.telefono, c.cedula, c.direccion, c.codigo
+                        FROM boletos b
+                        LEFT JOIN clientes c ON b.cliente_id = c.id
+                        WHERE b.sorteo_id = %s AND b.numero IN ({placeholders})
+                    """
+                    params = [id_sorteo] + lista_busqueda
+                    resultados_ocupados = run_query(query, tuple(params))
+                    
+                    # Mapear resultados por número para acceso rápido
+                    mapa_resultados = {r[0]: r for r in resultados_ocupados} if resultados_ocupados else {}
+                    
+                    fmt_num = "{:02d}" if cantidad_boletos <= 100 else "{:03d}"
 
-            # --- LÓGICA: SI ES UN SOLO BOLETO (Comportamiento Clásico) ---
-            if len(lista_busqueda) == 1:
-                numero = lista_busqueda[0]
-                fmt_input = "%02d" if cantidad_boletos <= 100 else "%03d"
-                
-                # Consulta Individual
-                boleto_info = run_query("""
-                    SELECT b.id, b.estado, b.precio, b.total_abonado, b.fecha_asignacion,
-                           c.nombre_completo, c.telefono, c.cedula, c.direccion, c.codigo
-                    FROM boletos b
-                    LEFT JOIN clientes c ON b.cliente_id = c.id
-                    WHERE b.numero = %s AND b.sorteo_id = %s
-                """, (numero, id_sorteo))
-                
-                if boleto_info:
-                    # ... (CÓDIGO DE BOLETO OCUPADO IGUAL QUE ANTES) ...
-                    b_id, estado, b_precio, b_abonado, b_fecha, c_nom, c_tel, c_ced, c_dir, c_cod = boleto_info[0]
-                    b_precio = float(b_precio); b_abonado = float(b_abonado)
+                    # ---------------------------------------------------------
+                    #  A. PANEL VISUAL (TARJETAS RELLENAS)
+                    # ---------------------------------------------------------
+                    st.write("### 🎫 Estado Actual")
                     
-                    st.info(f"Ticket {numero}: 👤 {c_nom} | 📞 {c_tel}")
-                    c_est = st.columns(3)
-                    if estado=='pagado': c_est[0].success("PAGADO")
-                    elif estado=='apartado': c_est[0].warning("APARTADO")
-                    else: c_est[0].info("ABONADO")
-                    c_est[1].metric("Precio", f"${b_precio}")
-                    c_est[2].metric("Deuda", f"${b_precio-b_abonado}")
+                    # Columnas dinámicas: Si es 1 boleto, lo centramos grande. Si son varios, grilla.
+                    if len(lista_busqueda) == 1:
+                        cols_vis = st.columns([1, 2, 1]) # Usamos la del medio
+                        col_target = cols_vis[1]
+                        idx_col = 0
+                    else:
+                        cols_vis = st.columns(4)
+                        col_target = None # Usaremos índice
                     
-                    with st.expander("🛠 Opciones de Gestión", expanded=True):
-                        # ABONOS
-                        if (b_precio - b_abonado) > 0.01:
-                            ma = st.number_input("Monto Abono ($)", min_value=0.0, max_value=(b_precio-b_abonado))
-                            if st.button("💸 REGISTRAR ABONO", use_container_width=True):
-                                nt = b_abonado + ma
-                                ne = 'pagado' if (b_precio - nt) <= 0.01 else 'abonado'
-                                run_query("UPDATE boletos SET total_abonado=%s, estado=%s WHERE id=%s", (nt, ne, b_id), fetch=False)
-                                run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle, monto) VALUES (%s, 'MOVIL', 'ABONO', %s, %s)", (id_sorteo, f"Abono {numero}", ma), fetch=False)
-                                st.success("Abonado"); time.sleep(1); st.rerun()
+                    for i, num_buscado in enumerate(lista_busqueda):
+                        # Determinar datos y estilo
+                        if num_buscado in mapa_resultados:
+                            # ESTÁ OCUPADO
+                            dato = mapa_resultados[num_buscado]
+                            estado = dato[1]
+                            nombre_cli = dato[7]
+                            
+                            if estado == 'abonado': 
+                                bg_color = "#1a73e8" # Azul
+                            elif estado == 'apartado': 
+                                bg_color = "#ff9800" # Naranja
+                            elif estado == 'pagado': 
+                                bg_color = "#9e9e9e" # Gris
+                            
+                            txt_estado = f"{estado.upper()}<br><span style='font-size:12px; opacity:0.8'>{nombre_cli[:15]}...</span>"
+                        else:
+                            # ESTÁ DISPONIBLE
+                            bg_color = "#4CAF50" # Verde
+                            estado = "disponible"
+                            txt_estado = "DISPONIBLE"
+
+                        # HTML de la Tarjeta
+                        html_card = f"""
+                        <div style="
+                            background-color: {bg_color};
+                            border-radius: 10px;
+                            padding: 15px;
+                            text-align: center;
+                            margin-bottom: 15px;
+                            color: white;
+                            box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
+                        ">
+                            <div style="font-size: 24px; font-weight: bold; line-height: 1.2;">
+                                {fmt_num.format(num_buscado)}
+                            </div>
+                            <div style="font-size: 14px; text-transform: uppercase; margin-top: 5px;">
+                                {txt_estado}
+                            </div>
+                        </div>
+                        """
                         
-                        st.divider()
-                        # ACCIONES
-                        c_btn1, c_btn2, c_btn3 = st.columns(3)
-                        if estado != 'apartado': 
-                            if c_btn1.button("📌 APARTADO", use_container_width=True):
-                                run_query("UPDATE boletos SET estado='apartado', total_abonado=0 WHERE id=%s", (b_id,), fetch=False)
-                                run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle) VALUES (%s, 'MOVIL', 'REVERTIR_APARTADO', %s)", (id_sorteo, f"Marcado como apartado {numero}"), fetch=False)
-                                st.rerun()
-                        if estado != 'pagado':
-                            if c_btn2.button("✅ PAGADO", use_container_width=True):
-                                run_query("UPDATE boletos SET estado='pagado', total_abonado=%s WHERE id=%s", (b_precio, b_id), fetch=False)
-                                run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle) VALUES (%s, 'MOVIL', 'PAGO_COMPLETO', %s)", (id_sorteo, f"Pago total boleto {numero}"), fetch=False)
-                                st.rerun()
-                        if c_btn3.button("🗑️ LIBERAR", use_container_width=True):
-                            run_query("DELETE FROM boletos WHERE id=%s", (b_id,), fetch=False)
-                            run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle) VALUES (%s, 'MOVIL', 'LIBERAR', %s)", (id_sorteo, f"Liberado boleto {numero}"), fetch=False)
-                            st.warning("Boleto liberado."); time.sleep(1); st.rerun()
-
-                    # PDF
+                        # Renderizar
+                        if len(lista_busqueda) == 1:
+                            with cols_vis[1]: st.markdown(html_card, unsafe_allow_html=True)
+                        else:
+                            with cols_vis[i % 4]: st.markdown(html_card, unsafe_allow_html=True)
+                    
                     st.divider()
-                    datos_pdf = {'cliente': c_nom, 'cedula': c_ced, 'telefono': c_tel, 'direccion': c_dir, 'codigo_cli': c_cod, 'estado': estado, 'precio': b_precio, 'abonado': b_abonado, 'fecha_asignacion': b_fecha}
-                    pdf_bytes = generar_pdf_memoria(numero, datos_pdf, config_full, cantidad_boletos)
-                    
-                    fmt_file = "{:02d}" if cantidad_boletos <= 100 else "{:03d}"
-                    num_file = fmt_file.format(numero)
-                    partes = c_nom.strip().upper().split()
-                    nom_archivo = f"{partes[0]} {partes[2]}" if len(partes) >= 4 else (f"{partes[0]} {partes[1]}" if len(partes) >= 2 else partes[0])
-                    nombre_final_pdf = f"{num_file} {nom_archivo} ({estado.upper()}).pdf"
 
-                    c_share1, c_share2 = st.columns(2)
-                    c_share1.download_button("📄 PDF", pdf_bytes, nombre_final_pdf, "application/pdf", use_container_width=True)
-                    link = get_whatsapp_link_exacto(c_tel, numero, estado, c_nom, nombre_s, str(fecha_s), cantidad_boletos)
-                    c_share2.link_button("📲 WhatsApp", link, use_container_width=True)
+                    # ---------------------------------------------------------
+                    #  B. LÓGICA DE GESTIÓN (INDIVIDUAL)
+                    # ---------------------------------------------------------
+                    if len(lista_busqueda) == 1:
+                        numero = lista_busqueda[0]
+                        
+                        if numero in mapa_resultados:
+                            # === CASO 1: BOLETO OCUPADO ===
+                            row = mapa_resultados[numero]
+                            b_id, estado, b_precio, b_abonado, b_fecha = row[5], row[1], float(row[2]), float(row[3]), row[4]
+                            c_nom, c_tel, c_ced, c_dir, c_cod = row[7], row[8], row[9], row[10], row[11]
+                            
+                            st.info(f"👤 **Cliente:** {c_nom} | 📞 {c_tel}")
+                            
+                            # Métricas financieras
+                            m1, m2, m3 = st.columns(3)
+                            m1.metric("Estado", estado.upper())
+                            m2.metric("Precio", f"${b_precio}")
+                            m3.metric("Deuda", f"${b_precio - b_abonado:.2f}")
 
-                else:
-                    # --- DISPONIBLE (VENTA INDIVIDUAL) ---
-                    fmt_num_show = "{:02d}" if cantidad_boletos <= 100 else "{:03d}"
-                    st.success(f"🟢 El boleto {fmt_num_show.format(numero)} está DISPONIBLE")
-                    with st.form("venta"):
-                        st.write("### 📝 Asignar Boleto")
-                        clientes = run_query("SELECT id, nombre_completo, codigo FROM clientes ORDER BY nombre_completo")
-                        opc_cli = {}
-                        if clientes:
-                            for c in clientes:
-                                codigo_display = c[2] if c[2] else "S/C"
-                                etiqueta = f"{c[1]} | {codigo_display}"
-                                opc_cli[etiqueta] = c[0]
-                        nom_sel = st.selectbox("👤 Buscar Cliente:", options=list(opc_cli.keys()), index=None, placeholder="Escribe para buscar...")
-                        
-                        c_abono, c_precio = st.columns(2)
-                        # 2. CAMBIO: Valor por defecto en 0.0
-                        abono = c_abono.number_input("Abono Inicial ($)", value=0.0, min_value=0.0) 
-                        c_precio.metric("Precio Boleto", f"${precio_s}")
-                        
-                        if st.form_submit_button("💾 ASIGNAR BOLETO", use_container_width=True):
-                            if nom_sel:
-                                cid = opc_cli[nom_sel]
-                                est = 'pagado' if abono >= precio_s else 'abonado'
-                                if abono == 0: est = 'apartado'
-                                run_query("INSERT INTO boletos (sorteo_id, numero, estado, precio, cliente_id, total_abonado, fecha_asignacion) VALUES (%s, %s, %s, %s, %s, %s, NOW())", (id_sorteo, numero, est, precio_s, cid, abono), fetch=False)
-                                run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle, monto) VALUES (%s, 'MOVIL', 'VENTA', %s, %s)", (id_sorteo, f"Venta boleto {numero}", abono), fetch=False)
-                                # 3. CAMBIO: Sin globos (st.balloons quitado)
-                                st.success("✅ Boleto asignado"); time.sleep(1); st.rerun()
-                            else: st.error("⚠️ Selecciona un cliente.")
+                            # 1. ZONA DE ABONO (Estilo nuevo)
+                            if (b_precio - b_abonado) > 0.01:
+                                with st.container(border=True):
+                                    st.write(f"💸 **Abonar al boleto {fmt_num.format(numero)}**")
+                                    c_ab1, c_ab2 = st.columns([1, 1])
+                                    monto_abono = c_ab1.number_input("Monto:", min_value=0.0, max_value=(b_precio-b_abonado), step=1.0, key="abono_indiv")
+                                    if c_ab2.button("💾 GUARDAR ABONO", use_container_width=True, key="btn_save_abono"):
+                                        if monto_abono > 0:
+                                            nt = b_abonado + monto_abono
+                                            ne = 'pagado' if (b_precio - nt) <= 0.01 else 'abonado'
+                                            run_query("UPDATE boletos SET total_abonado=%s, estado=%s WHERE id=%s", (nt, ne, b_id), fetch=False)
+                                            run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle, monto) VALUES (%s, 'MOVIL', 'ABONO', %s, %s)", (id_sorteo, f"Abono {numero}", monto_abono), fetch=False)
+                                            st.success("✅ Abonado"); time.sleep(1); st.rerun()
 
-            # --- LÓGICA: VENTA MÚLTIPLE (VARIOS BOLETOS) ---
-            elif len(lista_busqueda) > 1:
-                st.info(f"🔢 Procesando {len(lista_busqueda)} boletos: {lista_busqueda}")
-                
-                # Verificar disponibilidad masiva
-                lista_str = ",".join(map(str, lista_busqueda))
-                # Nota: En SQL crudo seguro usamos IN, aquí iteramos por simplicidad y seguridad
-                ocupados = []
-                for n in lista_busqueda:
-                    res = run_query("SELECT 1 FROM boletos WHERE sorteo_id=%s AND numero=%s", (id_sorteo, n))
-                    if res: ocupados.append(n)
-                
-                if ocupados:
-                    st.error(f"❌ Error: Los siguientes boletos ya están ocupados: {ocupados}")
-                else:
-                    st.success("🟢 Todos los boletos están DISPONIBLES")
-                    with st.form("venta_multi"):
-                        st.write(f"### 📝 Asignar {len(lista_busqueda)} Boletos")
-                        clientes = run_query("SELECT id, nombre_completo, codigo FROM clientes ORDER BY nombre_completo")
-                        opc_cli = {}
-                        if clientes:
-                            for c in clientes:
-                                codigo_display = c[2] if c[2] else "S/C"
-                                etiqueta = f"{c[1]} | {codigo_display}"
-                                opc_cli[etiqueta] = c[0]
-                        nom_sel = st.selectbox("👤 Cliente:", options=list(opc_cli.keys()), index=None)
-                        
-                        c_abono, c_precio = st.columns(2)
-                        # 2. CAMBIO: Valor 0.0 (Aplica a cada boleto o total? Asumimos por boleto para simplificar lógica de estado)
-                        st.caption("El abono ingresado se aplicará a CADA boleto individualmente.")
-                        abono_por_boleto = c_abono.number_input("Abono por Boleto ($)", value=0.0, min_value=0.0)
-                        
-                        total_pagar = abono_por_boleto * len(lista_busqueda)
-                        c_precio.metric("Total a Pagar", f"${total_pagar:.2f}")
-                        
-                        if st.form_submit_button("💾 ASIGNAR TODOS", use_container_width=True):
-                            if nom_sel:
-                                cid = opc_cli[nom_sel]
-                                est = 'pagado' if abono_por_boleto >= precio_s else 'abonado'
-                                if abono_por_boleto == 0: est = 'apartado'
+                            # 2. BOTONES DE ACCIÓN
+                            c_btn1, c_btn2, c_btn3 = st.columns(3)
+                            if estado != 'apartado': 
+                                if c_btn1.button("📌 APARTAR", use_container_width=True, key="btn_aprt"):
+                                    run_query("UPDATE boletos SET estado='apartado', total_abonado=0 WHERE id=%s", (b_id,), fetch=False)
+                                    st.rerun()
+                            if estado != 'pagado':
+                                if c_btn2.button("✅ PAGADO", use_container_width=True, key="btn_pag"):
+                                    run_query("UPDATE boletos SET estado='pagado', total_abonado=%s WHERE id=%s", (b_precio, b_id), fetch=False)
+                                    st.rerun()
+                            if c_btn3.button("🗑️ LIBERAR", type="primary", use_container_width=True, key="btn_lib"):
+                                run_query("DELETE FROM boletos WHERE id=%s", (b_id,), fetch=False)
+                                st.warning("Liberado"); time.sleep(1); st.rerun()
+                            
+                            st.divider()
+                            
+                            # 3. PDF Y WHATSAPP
+                            datos_pdf = {'cliente': c_nom, 'cedula': c_ced, 'telefono': c_tel, 'direccion': c_dir, 'codigo_cli': c_cod, 'estado': estado, 'precio': b_precio, 'abonado': b_abonado, 'fecha_asignacion': b_fecha}
+                            pdf_bytes = generar_pdf_memoria(numero, datos_pdf, config_full, cantidad_boletos)
+                            
+                            # Nombre archivo
+                            num_file = fmt_num.format(numero)
+                            partes = c_nom.strip().upper().split()
+                            nom_archivo = f"{partes[0]} {partes[2]}" if len(partes) >= 4 else (f"{partes[0]} {partes[1]}" if len(partes) >= 2 else partes[0])
+                            nombre_final_pdf = f"{num_file} {nom_archivo} ({estado.upper()}).pdf"
+
+                            c_share1, c_share2 = st.columns(2)
+                            c_share1.download_button("📄 PDF", pdf_bytes, nombre_final_pdf, "application/pdf", use_container_width=True)
+                            link = get_whatsapp_link_exacto(c_tel, numero, estado, c_nom, nombre_s, str(fecha_s), cantidad_boletos)
+                            c_share2.link_button("📲 WhatsApp", link, use_container_width=True)
+
+                        else:
+                            # === CASO 2: BOLETO DISPONIBLE ===
+                            with st.form("venta_single"):
+                                st.write(f"### 📝 Vender Boleto {fmt_num.format(numero)}")
+                                # Selector Cliente
+                                clientes = run_query("SELECT id, nombre_completo, codigo FROM clientes ORDER BY nombre_completo")
+                                opc_cli = {}
+                                if clientes:
+                                    for c in clientes:
+                                        cod_d = c[2] if c[2] else "S/C"
+                                        opc_cli[f"{c[1]} | {cod_d}"] = c[0]
                                 
-                                for n_bol in lista_busqueda:
-                                    run_query("INSERT INTO boletos (sorteo_id, numero, estado, precio, cliente_id, total_abonado, fecha_asignacion) VALUES (%s, %s, %s, %s, %s, %s, NOW())", 
-                                             (id_sorteo, n_bol, est, precio_s, cid, abono_por_boleto), fetch=False)
-                                    run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle, monto) VALUES (%s, 'MOVIL', 'VENTA_LOTE', %s, %s)", 
-                                             (id_sorteo, f"Venta boleto {n_bol} (Lote)", abono_por_boleto), fetch=False)
+                                nom_sel = st.selectbox("👤 Cliente:", options=list(opc_cli.keys()), index=None)
+                                c_abono, c_precio = st.columns(2)
+                                abono = c_abono.number_input("Abono Inicial ($)", value=0.0, min_value=0.0) 
+                                c_precio.metric("Precio Boleto", f"${precio_s}")
                                 
-                                # 3. CAMBIO: Sin globos
-                                st.success(f"✅ {len(lista_busqueda)} Boletos asignados correctamente"); time.sleep(1.5); st.rerun()
-                            else: st.error("⚠️ Selecciona cliente")
-            else:
-                if entrada_boletos: st.warning("Formato inválido o números fuera de rango.")
+                                if st.form_submit_button("💾 ASIGNAR BOLETO", use_container_width=True):
+                                    if nom_sel:
+                                        cid = opc_cli[nom_sel]
+                                        est = 'pagado' if abono >= precio_s else 'abonado'
+                                        if abono == 0: est = 'apartado'
+                                        run_query("INSERT INTO boletos (sorteo_id, numero, estado, precio, cliente_id, total_abonado, fecha_asignacion) VALUES (%s, %s, %s, %s, %s, %s, NOW())", (id_sorteo, numero, est, precio_s, cid, abono), fetch=False)
+                                        st.success("✅ Asignado"); time.sleep(1); st.rerun()
+                                    else: st.error("⚠️ Falta cliente")
+
+                    # ---------------------------------------------------------
+                    #  C. LÓGICA DE GESTIÓN (MÚLTIPLE)
+                    # ---------------------------------------------------------
+                    elif len(lista_busqueda) > 1:
+                        # Verificar si hay ocupados
+                        ocupados = [n for n in lista_busqueda if n in mapa_resultados]
+                        
+                        if ocupados:
+                            st.error(f"❌ No se pueden asignar masivamente porque estos boletos ya están ocupados: {ocupados}")
+                            st.info("Gestiona los boletos ocupados uno por uno o usa la búsqueda por cliente.")
+                        else:
+                            st.success("🟢 Todos disponibles para venta masiva")
+                            with st.form("venta_multi"):
+                                st.write(f"### 📝 Asignar {len(lista_busqueda)} Boletos")
+                                clientes = run_query("SELECT id, nombre_completo, codigo FROM clientes ORDER BY nombre_completo")
+                                opc_cli = {}
+                                if clientes:
+                                    for c in clientes:
+                                        opc_cli[f"{c[1]} | {c[2] or 'S/C'}"] = c[0]
+                                nom_sel = st.selectbox("👤 Cliente:", options=list(opc_cli.keys()), index=None)
+                                
+                                c_ab, c_pr = st.columns(2)
+                                abono_unit = c_ab.number_input("Abono por Boleto ($)", value=0.0)
+                                c_pr.metric("Total a Pagar", f"${abono_unit * len(lista_busqueda):.2f}")
+                                
+                                if st.form_submit_button("💾 ASIGNAR TODOS", use_container_width=True):
+                                    if nom_sel:
+                                        cid = opc_cli[nom_sel]
+                                        est = 'pagado' if abono_unit >= precio_s else 'abonado'
+                                        if abono_unit == 0: est = 'apartado'
+                                        for n_bol in lista_busqueda:
+                                            run_query("INSERT INTO boletos (sorteo_id, numero, estado, precio, cliente_id, total_abonado, fecha_asignacion) VALUES (%s, %s, %s, %s, %s, %s, NOW())", 
+                                                     (id_sorteo, n_bol, est, precio_s, cid, abono_unit), fetch=False)
+                                        st.success("✅ Asignados"); time.sleep(1); st.rerun()
 
         # ============================================================
         #  MODO B: POR CLIENTE (Gestión Visual con Botones Interactivos)
