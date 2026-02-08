@@ -719,7 +719,7 @@ def main():
                                         st.success("✅ Asignados"); time.sleep(1); st.rerun()
 
         # ============================================================
-        #  MODO B: POR CLIENTE (Gestión Visual con Botones Interactivos)
+        #  MODO B: POR CLIENTE (Gestión Visual - ACCIONES VISIBLES)
         # ============================================================
         else:
             # 1. Buscador de Clientes
@@ -761,18 +761,17 @@ def main():
                     #  A. PANEL INFORMATIVO (TARJETAS PEQUEÑAS - COLOR ORO)
                     # ---------------------------------------------------------
                     st.write("### 🎫 Estado Actual")
-                    cols_info = st.columns(4) # 4 columnas para igualar tamaño con Modo A
+                    cols_info = st.columns(4) 
                     
                     for i, b in enumerate(boletos_cli):
                         num, est, pre, abo, f_asig = b
                         
-                        # Definir colores de FONDO
-                        bg_color = "#9e9e9e" # Gris (Pagado/Default)
-                        if est == 'abonado': bg_color = "#1a73e8" # Azul
-                        elif est == 'apartado': bg_color = "#FFC107" # Amarillo Oro
-                        elif est == 'pagado': bg_color = "#9e9e9e" # Gris
+                        # Colores de FONDO
+                        bg_color = "#9e9e9e" 
+                        if est == 'abonado': bg_color = "#1a73e8"
+                        elif est == 'apartado': bg_color = "#FFC107"
+                        elif est == 'pagado': bg_color = "#9e9e9e"
                         
-                        # Renderizar tarjeta RELLENA
                         html_card = f"""
                         <div style="
                             background-color: {bg_color};
@@ -793,22 +792,21 @@ def main():
                         """
                         with cols_info[i % 4]:
                             st.markdown(html_card, unsafe_allow_html=True)
+                    
+                    st.divider()
 
                     # ---------------------------------------------------------
                     #  B. PANEL DE SELECCIÓN (Botones Interactivos)
                     # ---------------------------------------------------------
                     st.write("### ✅ Toca los boletos para procesar:")
                     
-                    # Inicializar estado de selección si cambia el cliente
                     if 'seleccion_actual' not in st.session_state: st.session_state.seleccion_actual = []
                     if 'cliente_previo' not in st.session_state or st.session_state.cliente_previo != cid:
-                        st.session_state.seleccion_actual = [] # Reset al cambiar cliente
+                        st.session_state.seleccion_actual = [] 
                         st.session_state.cliente_previo = cid
 
-                    # Crear Grilla de Botones
-                    cols_sel = st.columns(5) # 5 boletos por fila
-                    
-                    datos_boletos_map = {} # Mapa para recuperar datos luego
+                    cols_sel = st.columns(5)
+                    datos_boletos_map = {} 
 
                     for i, b in enumerate(boletos_cli):
                         num, est, pre, abo, f_asig = b
@@ -816,102 +814,111 @@ def main():
                         datos_boletos_map[num] = {'numero': num, 'estado': est, 'precio': pre, 'abonado': abo, 'fecha': f_asig}
                         
                         es_seleccionado = num in st.session_state.seleccion_actual
-                        
-                        # Definir etiqueta y estilo del botón
                         label_btn = f"✔ {num_fmt}" if es_seleccionado else f"{num_fmt}"
-                        type_btn = "primary" if es_seleccionado else "secondary" # Primary suele ser Rojo/ColorTema
+                        type_btn = "primary" if es_seleccionado else "secondary"
                         
-                        # Dibujar botón
                         with cols_sel[i % 5]:
-                            # Si se presiona, alternamos su estado en la lista
                             if st.button(label_btn, key=f"btn_sel_{num}", type=type_btn, use_container_width=True):
                                 if num in st.session_state.seleccion_actual:
                                     st.session_state.seleccion_actual.remove(num)
                                 else:
                                     st.session_state.seleccion_actual.append(num)
-                                st.rerun() # Recargar para actualizar color visual
+                                st.rerun()
 
-                    # ---------------------------------------------------------
-                    #  C. ACCIONES SOBRE LA SELECCIÓN
-                    # ---------------------------------------------------------
-                    if st.session_state.seleccion_actual:
-                        numeros_sel = sorted(st.session_state.seleccion_actual)
-                        # Recuperamos los datos completos de los seleccionados usando el mapa
-                        datos_sel = [datos_boletos_map[n] for n in numeros_sel]
-                        
+                    # Preparar datos de la selección actual (si la hay)
+                    numeros_sel = sorted(st.session_state.seleccion_actual)
+                    datos_sel = [datos_boletos_map[n] for n in numeros_sel]
+
+                    if numeros_sel:
                         st.write(f"**Seleccionados ({len(numeros_sel)}):** {', '.join([fmt_num.format(n) for n in numeros_sel])}")
+                    else:
+                        st.caption("No has seleccionado ningún boleto aún.")
+
+                    st.divider()
+
+                    # ==========================================================
+                    #  C. ZONA DE ABONO (VISIBLE PERO DESACTIVADA SI NO ES 1)
+                    # ==========================================================
+                    # Determinamos si habilitamos la zona de abono
+                    habilitar_abono = (len(numeros_sel) == 1)
+                    
+                    with st.container(border=True):
+                        st.write(f"💸 **Abono / Pago Parcial**")
                         
-                        # ==========================================================
-                        #  1. ZONA DE ABONO (SOLO SI HAY 1 SELECCIONADO)
-                        # ==========================================================
-                        if len(numeros_sel) == 1:
-                            dato_unico = datos_sel[0] # Datos del boleto único
+                        if habilitar_abono:
+                            dato_unico = datos_sel[0]
                             deuda_actual = dato_unico['precio'] - dato_unico['abonado']
+                            st.caption(f"Boleto {fmt_num.format(dato_unico['numero'])} | Deuda: ${deuda_actual:.2f}")
                             
-                            with st.container(border=True):
-                                st.write(f"💸 **Abonar al boleto {fmt_num.format(dato_unico['numero'])}**")
-                                c_ab_1, c_ab_2, c_ab_3 = st.columns([2, 2, 2])
-                                
-                                c_ab_1.caption(f"Deuda: ${deuda_actual:.2f}")
-                                monto_abono = c_ab_2.number_input("Monto:", min_value=0.0, max_value=deuda_actual, step=1.0, key="input_abono_cli")
-                                
-                                if c_ab_3.button("💾 GUARDAR ABONO", use_container_width=True):
-                                    if monto_abono > 0:
-                                        nuevo_total = dato_unico['abonado'] + monto_abono
-                                        # Calcular nuevo estado
-                                        nuevo_estado = 'pagado' if (dato_unico['precio'] - nuevo_total) <= 0.01 else 'abonado'
-                                        
-                                        # Actualizar BD
-                                        run_query("UPDATE boletos SET total_abonado=%s, estado=%s WHERE sorteo_id=%s AND numero=%s", 
-                                                 (nuevo_total, nuevo_estado, id_sorteo, dato_unico['numero']), fetch=False)
-                                        
-                                        # Historial
-                                        run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle, monto) VALUES (%s, 'MOVIL', 'ABONO_CLIENTE', %s, %s)", 
-                                                 (id_sorteo, f"Abono a boleto {dato_unico['numero']}", monto_abono), fetch=False)
-                                        
-                                        st.session_state.seleccion_actual = [] # Limpiar para refrescar
-                                        st.success("✅ Abono registrado correctamente"); time.sleep(1); st.rerun()
-                                    else:
-                                        st.warning("Ingresa un monto mayor a 0")
+                            c_ab1, c_ab2 = st.columns([2, 1])
+                            monto_abono = c_ab1.number_input("Monto:", min_value=0.0, max_value=deuda_actual, step=1.0, key="input_abono_cli")
+                            
+                            if c_ab2.button("💾 GUARDAR", type="primary", use_container_width=True):
+                                if monto_abono > 0:
+                                    nuevo_total = dato_unico['abonado'] + monto_abono
+                                    nuevo_estado = 'pagado' if (dato_unico['precio'] - nuevo_total) <= 0.01 else 'abonado'
+                                    run_query("UPDATE boletos SET total_abonado=%s, estado=%s WHERE sorteo_id=%s AND numero=%s", 
+                                             (nuevo_total, nuevo_estado, id_sorteo, dato_unico['numero']), fetch=False)
+                                    run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle, monto) VALUES (%s, 'MOVIL', 'ABONO_CLIENTE', %s, %s)", 
+                                             (id_sorteo, f"Abono a boleto {dato_unico['numero']}", monto_abono), fetch=False)
+                                    st.session_state.seleccion_actual = [] 
+                                    st.success("✅ Abono registrado"); time.sleep(1); st.rerun()
                         else:
-                            st.info("💡 Para registrar un abono parcial, selecciona un solo boleto.")
+                            # Estado DESACTIVADO (Visual)
+                            st.warning("⚠️ Selecciona EXACTAMENTE 1 boleto para habilitar el abono.")
+                            c_dis1, c_dis2 = st.columns([2, 1])
+                            c_dis1.text_input("Monto:", placeholder="Bloqueado", disabled=True)
+                            c_dis2.button("💾 GUARDAR", disabled=True, use_container_width=True)
 
-                        st.divider()
+                    st.write("") # Espacio
 
-                        # ==========================================================
-                        #  2. BOTONES DE ACCIÓN MASIVA (PAGAR TODO / APARTAR / LIBERAR)
-                        # ==========================================================
-                        c_acc1, c_acc2, c_acc3 = st.columns(3)
-                        
-                        if c_acc1.button("✅ PAGAR SELECCIÓN", use_container_width=True):
+                    # ==========================================================
+                    #  D. BOTONES DE ACCIÓN MASIVA (SIEMPRE VISIBLES)
+                    # ==========================================================
+                    c_acc1, c_acc2, c_acc3 = st.columns(3)
+                    
+                    # Botón PAGAR
+                    if c_acc1.button("✅ PAGAR", use_container_width=True):
+                        if not numeros_sel:
+                            st.error("⚠️ Selecciona al menos un boleto primero.")
+                        else:
                             for d in datos_sel:
                                 if d['estado'] != 'pagado':
                                     run_query("UPDATE boletos SET estado='pagado', total_abonado=%s WHERE sorteo_id=%s AND numero=%s", (d['precio'], id_sorteo, d['numero']), fetch=False)
                                     run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle) VALUES (%s, 'MOVIL', 'PAGO_MASIVO', %s)", (id_sorteo, f"Pago boleto {d['numero']}"), fetch=False)
                             st.session_state.seleccion_actual = [] 
                             st.success("Pagados correctamente"); time.sleep(1); st.rerun()
-                            
-                        if c_acc2.button("📌 APARTAR SELECCIÓN", use_container_width=True):
+                        
+                    # Botón APARTAR
+                    if c_acc2.button("📌 APARTAR", use_container_width=True):
+                        if not numeros_sel:
+                            st.error("⚠️ Selecciona al menos un boleto primero.")
+                        else:
                             for d in datos_sel:
                                 run_query("UPDATE boletos SET estado='apartado', total_abonado=0 WHERE sorteo_id=%s AND numero=%s", (id_sorteo, d['numero']), fetch=False)
                             st.session_state.seleccion_actual = []
                             st.success("Apartados correctamente"); time.sleep(1); st.rerun()
 
-                        if c_acc3.button("🗑️ LIBERAR SELECCIÓN", type="primary", use_container_width=True):
+                    # Botón LIBERAR
+                    if c_acc3.button("🗑️ LIBERAR", type="primary", use_container_width=True):
+                        if not numeros_sel:
+                            st.error("⚠️ Selecciona al menos un boleto primero.")
+                        else:
                             for d in datos_sel:
                                 run_query("DELETE FROM boletos WHERE sorteo_id=%s AND numero=%s", (id_sorteo, d['numero']), fetch=False)
                                 run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle) VALUES (%s, 'MOVIL', 'LIBERAR_MASIVO', %s)", (id_sorteo, f"Liberado boleto {d['numero']}"), fetch=False)
                             st.session_state.seleccion_actual = []
                             st.warning("Liberados correctamente"); time.sleep(1); st.rerun()
 
-                        st.divider()
-                        
-                        # ==========================================================
-                        #  3. WHATSAPP Y PDF
-                        # ==========================================================
-                        col_wa, col_pdf = st.columns([1, 1])
-                        
-                        # WhatsApp
+                    st.divider()
+                    
+                    # ==========================================================
+                    #  E. WHATSAPP Y PDF (SIEMPRE VISIBLES)
+                    # ==========================================================
+                    col_wa, col_pdf = st.columns([1, 1])
+                    
+                    # --- WhatsApp ---
+                    if numeros_sel:
                         partes_msg = []
                         for d in datos_sel:
                             n_s = fmt_num.format(d['numero'])
@@ -924,17 +931,20 @@ def main():
                             f"'{nombre_s}' del día '{fecha_s}' . ¡Suerte!🍀"
                         )
                         tel_raw = datos_c['telefono']
+                        link_wa = ""
                         if tel_raw:
                             tel_clean = "".join(filter(str.isdigit, str(tel_raw)))
                             if len(tel_clean) == 10: tel_clean = "58" + tel_clean
                             elif len(tel_clean) == 11 and tel_clean.startswith("0"): tel_clean = "58" + tel_clean[1:]
-                            link = f"https://api.whatsapp.com/send?phone={tel_clean}&text={urllib.parse.quote(msg_wa)}"
-                            col_wa.link_button("📲 WhatsApp Selección", link, use_container_width=True)
-                        else:
-                            col_wa.warning("Sin teléfono")
+                            link_wa = f"https://api.whatsapp.com/send?phone={tel_clean}&text={urllib.parse.quote(msg_wa)}"
                         
-                        # PDFs
-                        with col_pdf:
+                        col_wa.link_button("📲 WhatsApp Selección", link_wa if link_wa else "#", use_container_width=True, disabled=(not link_wa))
+                    else:
+                        col_wa.button("📲 WhatsApp (Selecciona)", disabled=True, use_container_width=True)
+                    
+                    # --- PDF ---
+                    with col_pdf:
+                        if numeros_sel:
                             st.write("**Descargar PDFs:**")
                             for d in datos_sel:
                                 info_pdf = {
@@ -948,9 +958,8 @@ def main():
                                 nom_archivo = f"{partes[0]} {partes[2]}" if len(partes) >= 4 else (f"{partes[0]} {partes[1]}" if len(partes) >= 2 else partes[0])
                                 n_file = f"{num_f} {nom_archivo} ({d['estado'].upper()}).pdf"
                                 st.download_button(f"📄 {num_f}", pdf_data, n_file, "application/pdf", key=f"btn_down_{d['numero']}", use_container_width=True)
-
-                    else:
-                        st.info("👆 Toca los botones de arriba para seleccionar boletos y ver acciones.")
+                        else:
+                            st.info("Selecciona boletos para ver PDFs")
                         
     # ---------------- PESTAÑA CLIENTES ----------------
     with tab_clientes: # <--- ¡ESTO TAMBIÉN FALTABA!
