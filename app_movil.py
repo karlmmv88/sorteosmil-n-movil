@@ -521,7 +521,6 @@ def main():
                 unsafe_allow_html=True
             )
         except Exception as e:
-            # Si algo falla en el cálculo, no rompemos la app, solo mostramos error pequeño
             st.error(f"Error calculando totales: {e}")
 
         # 4. Botón Descarga
@@ -530,8 +529,12 @@ def main():
         
         st.divider()
 
+        # --- SELECTOR DE MODO ---
+        modo = st.radio("📍 Selecciona opción:", ["🔢 Por N° de Boleto", "👤 Por Cliente"], horizontal=True)
+        st.write("") # Espacio visual
+
         # ============================================================
-        #  MODO A: POR NÚMERO (Botones Flexibles - Corrección de Pagos)
+        #  MODO A: POR NÚMERO
         # ============================================================
         if modo == "🔢 Por N° de Boleto":
             c1, c2 = st.columns([2,1])
