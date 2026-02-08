@@ -908,9 +908,9 @@ def main():
                             # Preparar nombre cliente (Sin guiones bajos, solo espacios)
                             partes_nom = datos_c['nombre'].strip().upper().split()
                             if len(partes_nom) >= 3:
-                                nom_archivo_cli = f"{partes_nom[0]} {partes_nom[2]}"
+                                nom_archivo_cli = f"{partes_nom[0]}_{partes_nom[2]}"
                             elif len(partes_nom) == 2:
-                                nom_archivo_cli = f"{partes_nom[0]} {partes_nom[1]}"
+                                nom_archivo_cli = f"{partes_nom[0]}_{partes_nom[1]}"
                             else:
                                 nom_archivo_cli = partes_nom[0] if partes_nom else "CLIENTE"
 
@@ -1082,4 +1082,5 @@ def main():
 if __name__ == "__main__":
     if check_password():
         main()
+
 
