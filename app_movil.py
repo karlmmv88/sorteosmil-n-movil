@@ -679,35 +679,61 @@ def main():
                     #  C. LÓGICA DE GESTIÓN (MÚLTIPLE)
                     # ---------------------------------------------------------
                     elif len(lista_busqueda) > 1:
+                        # Verificamos si alguno ya está ocupado
                         ocupados = [n for n in lista_busqueda if n in mapa_resultados]
                         
                         if ocupados:
                             st.error(f"❌ No se pueden asignar masivamente porque estos boletos ya están ocupados: {ocupados}")
                             st.info("Gestiona los boletos ocupados uno por uno o usa la búsqueda por cliente.")
                         else:
-                            st.success("🟢 Todos disponibles para venta masiva")
+                            st.success(f"🟢 {len(lista_busqueda)} boletos disponibles. Llenar datos:")
+                            
+                            # --- FORMULARIO DE VENTA MASIVA ---
                             with st.form("venta_multi"):
-                                st.write(f"### 📝 Asignar {len(lista_busqueda)} Boletos")
+                                st.write(f"### 📝 Asignar Boletos: {lista_busqueda}")
+                                
+                                # 1. Selector de Cliente
                                 clientes = run_query("SELECT id, nombre_completo, codigo FROM clientes ORDER BY nombre_completo")
                                 opc_cli = {}
                                 if clientes:
                                     for c in clientes:
-                                        opc_cli[f"{c[1]} | {c[2] or 'S/C'}"] = c[0]
+                                        cod_d = c[2] if c[2] else "S/C"
+                                        opc_cli[f"{c[1]} | {cod_d}"] = c[0]
+                                
                                 nom_sel = st.selectbox("👤 Cliente:", options=list(opc_cli.keys()), index=None)
                                 
+                                # 2. Datos de Pago
+                                st.divider()
                                 c_ab, c_pr = st.columns(2)
-                                abono_unit = c_ab.number_input("Abono por Boleto ($)", value=0.0)
-                                c_pr.metric("Total a Pagar", f"${abono_unit * len(lista_busqueda):.2f}")
+                                abono_unit = c_ab.number_input("Abono por Boleto ($)", value=0.0, min_value=0.0, step=1.0)
                                 
+                                total_operacion = abono_unit * len(lista_busqueda)
+                                c_pr.metric("Total a Pagar (Suma)", f"${total_operacion:,.2f}")
+                                
+                                # 3. Botón de Guardar
                                 if st.form_submit_button("💾 ASIGNAR TODOS", use_container_width=True):
                                     if nom_sel:
                                         cid = opc_cli[nom_sel]
+                                        
+                                        # Determinar estado según el abono unitario vs precio unitario
                                         est = 'pagado' if abono_unit >= precio_s else 'abonado'
                                         if abono_unit == 0: est = 'apartado'
+                                        
+                                        # Insertar cada boleto
                                         for n_bol in lista_busqueda:
-                                            run_query("INSERT INTO boletos (sorteo_id, numero, estado, precio, cliente_id, total_abonado, fecha_asignacion) VALUES (%s, %s, %s, %s, %s, %s, NOW())", 
-                                                     (id_sorteo, n_bol, est, precio_s, cid, abono_unit), fetch=False)
-                                        st.success("✅ Asignados"); time.sleep(1); st.rerun()
+                                            run_query("""
+                                                INSERT INTO boletos (sorteo_id, numero, estado, precio, cliente_id, total_abonado, fecha_asignacion) 
+                                                VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                                            """, (id_sorteo, n_bol, est, precio_s, cid, abono_unit), fetch=False)
+                                            
+                                            # Opcional: Registrar en historial (si tienes tabla historial)
+                                            # run_query("INSERT INTO historial ...") 
+
+                                        st.success("✅ Boletos asignados correctamente")
+                                        time.sleep(1)
+                                        st.rerun()
+                                    else:
+                                        st.error("⚠️ Debes seleccionar un cliente.")
 
         # ============================================================
         #  MODO B: POR CLIENTE (Botones dinámicos según estado)
