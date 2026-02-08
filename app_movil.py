@@ -709,6 +709,7 @@ def main():
         # ============================================================
         else:
             # 1. Buscador de Clientes
+            # Traemos TODOS los datos necesarios: id, nombre, telefono, cedula, direccion, codigo
             clientes_con_boletos = run_query("""
                 SELECT DISTINCT c.id, c.nombre_completo, c.telefono, c.cedula, c.direccion, c.codigo
                 FROM clientes c
@@ -718,11 +719,20 @@ def main():
             
             opciones_cliente = {}
             datos_cliente_map = {}
+            
             if clientes_con_boletos:
                 for c in clientes_con_boletos:
                     etiqueta = f"{c[1]} | {c[2]}"
                     opciones_cliente[etiqueta] = c[0]
-                    datos_cliente_map[c[0]] = {'nombre': c[1], 'telefono': c[2]}
+                    
+                    # 🔥 CORRECCIÓN: GUARDAMOS TODOS LOS DATOS (Cédula, Dirección, Código)
+                    datos_cliente_map[c[0]] = {
+                        'nombre': c[1], 
+                        'telefono': c[2],
+                        'cedula': c[3],      # <--- Faltaba esto
+                        'direccion': c[4],   # <--- Faltaba esto
+                        'codigo': c[5]       # <--- Faltaba esto
+                    }
             
             cliente_sel = st.selectbox("👤 Buscar Cliente:", options=list(opciones_cliente.keys()), index=None, placeholder="Escribe el nombre...")
             
