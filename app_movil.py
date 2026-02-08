@@ -415,9 +415,14 @@ def check_password():
         return True
 
     st.markdown("### 🔐 Acceso Restringido")
-    pwd_input = st.text_input("Ingresa la contraseña:", type="password")
     
-    if st.button("Entrar"):
+    # --- CAMBIO: Usamos st.form para detectar la tecla ENTER ---
+    with st.form("login_form"):
+        pwd_input = st.text_input("Ingresa la contraseña:", type="password")
+        # El botón de submit se activa con Clic o ENTER en el campo de texto
+        submit_btn = st.form_submit_button("Entrar")
+    
+    if submit_btn:
         # Usa la clave de los Secrets o "admin123" por defecto si no existe
         clave_secreta = st.secrets.get("PASSWORD_APP", "admin123")
         if pwd_input == clave_secreta:
