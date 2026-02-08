@@ -647,7 +647,7 @@ def main():
                             
                             st.divider()
 
-                            #  PDF Y WHATSAPP 
+                            # --- SECCIÓN PDF Y WHATSAPP ---
                             col_wa, col_pdf = st.columns([1, 1])
                             
                             # 1. Lógica de Nombre (Con guiones bajos)
@@ -660,6 +660,19 @@ def main():
                                 nom_archivo = partes_nom[0]
                             
                             n_file = f"{str_num} {nom_archivo} ({estado.upper()}).pdf"
+
+                            # 2. PDF
+                            info_pdf = {'cliente': c_nom, 'cedula': c_ced, 'telefono': c_tel, 'direccion': c_dir, 'codigo_cli': c_cod, 'estado': estado, 'precio': b_precio, 'abonado': b_abonado, 'fecha_asignacion': b_fecha}
+                            pdf_data = generar_pdf_memoria(numero, info_pdf, config_full, cantidad_boletos)
+                            col_pdf.download_button(f"📄 PDF", pdf_data, n_file, "application/pdf", use_container_width=True)
+
+                            # 3. WhatsApp (CORREGIDO: Llamamos a la función, NO la definimos aquí)
+                            link_wa = get_whatsapp_link_exacto(c_tel, numero, estado, c_nom, nombre_s, str(fecha_s), cantidad_boletos)
+                            
+                            if link_wa:
+                                col_wa.link_button("📲 WhatsApp", link_wa, use_container_width=True)
+                            else:
+                                col_wa.warning("Sin teléfono")
 
                             # 2. PDF
                             info_pdf = {'cliente': c_nom, 'cedula': c_ced, 'telefono': c_tel, 'direccion': c_dir, 'codigo_cli': c_cod, 'estado': estado, 'precio': b_precio, 'abonado': b_abonado, 'fecha_asignacion': b_fecha}
@@ -933,9 +946,9 @@ def main():
                             
                             partes_nom = datos_c['nombre'].strip().upper().split()
                             if len(partes_nom) >= 3:
-                                nom_archivo_cli = f"{partes_nom[0]} {partes_nom[2]}"
+                                nom_archivo_cli = f"{partes_nom[0]}_{partes_nom[2]}"
                             elif len(partes_nom) == 2:
-                                nom_archivo_cli = f"{partes_nom[0]} {partes_nom[1]}"
+                                nom_archivo_cli = f"{partes_nom[0]}_{partes_nom[1]}"
                             else:
                                 nom_archivo_cli = partes_nom[0] if partes_nom else "CLIENTE"
 
