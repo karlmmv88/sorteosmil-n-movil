@@ -675,7 +675,7 @@ def main():
                                         st.success("✅ Asignados"); time.sleep(1); st.rerun()
 
         # ============================================================
-        #  MODO B: POR CLIENTE (Selección Libre - Permite corregir Pagados)
+        #  MODO B: POR CLIENTE (Botones dinámicos según estado)
         # ============================================================
         else:
             # 1. Buscador de Clientes
@@ -740,7 +740,7 @@ def main():
                         num, est, pre, abo, f_asig = b
                         datos_boletos_map[num] = {'numero': num, 'estado': est, 'precio': pre, 'abonado': abo, 'fecha': f_asig}
                         
-                        # 🔥 CAMBIO: YA NO BLOQUEAMOS NADA (Permite corregir pagados)
+                        # Selección Libre
                         es_seleccionado = num in st.session_state.seleccion_actual
                         label_btn = f"✔ {fmt_num.format(num)}" if es_seleccionado else f"{fmt_num.format(num)}"
                         type_btn = "primary" if es_seleccionado else "secondary"
@@ -759,12 +759,11 @@ def main():
 
                     st.divider()
 
-                    # C. ZONA ABONO (Si hay 1 seleccionado y NO está pagado, o si se quiere corregir)
-                    # Nota: Si está pagado, la deuda es 0, así que el input será 0.
+                    # C. ZONA ABONO (Si hay 1 seleccionado y tiene deuda)
                     if len(numeros_sel) == 1:
                         dato_unico = datos_sel[0]
                         deuda = dato_unico['precio'] - dato_unico['abonado']
-                        if deuda > 0: # Solo mostramos si hay deuda real
+                        if deuda > 0.01: # Solo mostrar si hay deuda
                             with st.container(border=True):
                                 st.write(f"💸 **Abonar: {fmt_num.format(dato_unico['numero'])}** (Deuda: ${deuda:.2f})")
                                 c1, c2 = st.columns([2,1])
@@ -775,27 +774,36 @@ def main():
                                     run_query("UPDATE boletos SET total_abonado=%s, estado=%s WHERE sorteo_id=%s AND numero=%s", (nt, ne, id_sorteo, dato_unico['numero']), fetch=False)
                                     st.session_state.seleccion_actual = []; st.rerun()
 
-                    # D. BOTONES DE ACCIÓN (Siempre habilitados si hay selección)
-                    c_acc1, c_acc2, c_acc3 = st.columns(3)
-                    
-                    # Botón PAGAR
-                    if c_acc1.button("✅ PAGAR", disabled=(not numeros_sel), use_container_width=True):
-                        for d in datos_sel:
-                            run_query("UPDATE boletos SET estado='pagado', total_abonado=%s WHERE sorteo_id=%s AND numero=%s", (d['precio'], id_sorteo, d['numero']), fetch=False)
-                        st.session_state.seleccion_actual = []; st.success("Pagado"); time.sleep(1); st.rerun()
+                    # D. BOTONES DE ACCIÓN (Desaparecen si no son necesarios)
+                    if numeros_sel:
+                        c_acc1, c_acc2, c_acc3 = st.columns(3)
+                        
+                        # Lógica de Visibilidad
+                        # Mostrar PAGAR si al menos UNO NO está pagado
+                        show_pagar = any(d['estado'] != 'pagado' for d in datos_sel)
+                        
+                        # Mostrar APARTAR si al menos UNO NO está apartado (Permite revertir pagados)
+                        show_apartar = any(d['estado'] != 'apartado' for d in datos_sel)
+                        
+                        # 1. PAGAR
+                        if show_pagar:
+                            if c_acc1.button("✅ PAGAR", use_container_width=True):
+                                for d in datos_sel:
+                                    run_query("UPDATE boletos SET estado='pagado', total_abonado=%s WHERE sorteo_id=%s AND numero=%s", (d['precio'], id_sorteo, d['numero']), fetch=False)
+                                st.session_state.seleccion_actual = []; st.success("Pagado"); time.sleep(1); st.rerun()
+                        
+                        # 2. APARTAR
+                        if show_apartar:
+                            if c_acc2.button("📌 APARTAR", use_container_width=True):
+                                for d in datos_sel:
+                                    run_query("UPDATE boletos SET estado='apartado', total_abonado=0 WHERE sorteo_id=%s AND numero=%s", (id_sorteo, d['numero']), fetch=False)
+                                st.session_state.seleccion_actual = []; st.success("Apartado"); time.sleep(1); st.rerun()
 
-                    # Botón APARTAR (Habilitado para REVERTIR incluso si estaba pagado)
-                    # Esto pone estado='apartado' y reinicia abono a 0.
-                    if c_acc2.button("📌 APARTAR", disabled=(not numeros_sel), use_container_width=True):
-                        for d in datos_sel:
-                            run_query("UPDATE boletos SET estado='apartado', total_abonado=0 WHERE sorteo_id=%s AND numero=%s", (id_sorteo, d['numero']), fetch=False)
-                        st.session_state.seleccion_actual = []; st.success("Revertido a Apartado"); time.sleep(1); st.rerun()
-
-                    # Botón LIBERAR (Habilitado siempre)
-                    if c_acc3.button("🗑️ LIBERAR", type="primary", disabled=(not numeros_sel), use_container_width=True):
-                        for d in datos_sel:
-                            run_query("DELETE FROM boletos WHERE sorteo_id=%s AND numero=%s", (id_sorteo, d['numero']), fetch=False)
-                        st.session_state.seleccion_actual = []; st.warning("Liberados"); time.sleep(1); st.rerun()
+                        # 3. LIBERAR (Siempre visible si hay selección)
+                        if c_acc3.button("🗑️ LIBERAR", type="primary", use_container_width=True):
+                            for d in datos_sel:
+                                run_query("DELETE FROM boletos WHERE sorteo_id=%s AND numero=%s", (id_sorteo, d['numero']), fetch=False)
+                            st.session_state.seleccion_actual = []; st.warning("Liberados"); time.sleep(1); st.rerun()
                     
                     st.divider()
                     
