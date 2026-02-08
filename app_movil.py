@@ -667,11 +667,39 @@ def main():
                             col_pdf.download_button(f"📄 PDF", pdf_data, n_file, "application/pdf", use_container_width=True)
 
                             # 3. WhatsApp
-                            link_wa = get_whatsapp_link_exacto(c_tel, numero, estado, c_nom, nombre_s, str(fecha_s), cantidad_boletos)
-                            if link_wa:
-                                col_wa.link_button("📲 WhatsApp", link_wa, use_container_width=True)
-                            else:
-                                col_wa.warning("Sin teléfono")
+                            def get_whatsapp_link_exacto(telefono, boleto_num, estado, cliente_nom, sorteo_nom, fecha_sorteo, cantidad_boletos=1000):
+                                if not telefono: return ""
+                                
+                                # Limpieza básica
+                                tel_clean = "".join(filter(str.isdigit, str(telefono)))
+                                
+                                # Lógica Venezuela (Si cumple, ajustamos. Si no, dejamos el número como viene para extranjeros)
+                                if len(tel_clean) == 10: 
+                                    tel_clean = "58" + tel_clean
+                                elif len(tel_clean) == 11 and tel_clean.startswith("0"): 
+                                    tel_clean = "58" + tel_clean[1:]
+                                # Si no es de 10 u 11 dígitos, asumimos que es internacional y lo dejamos tal cual.
+                                
+                                # Formateo de Estado
+                                est_str = estado.upper()
+                                if estado == 'pagado': est_str = "PAGADO"
+                                elif estado == 'abonado': est_str = "ABONADO"
+                                elif estado == 'apartado': est_str = "APARTADO"
+                                
+                                fmt_num = "{:02d}" if cantidad_boletos <= 100 else "{:03d}"
+                                num_str = fmt_num.format(boleto_num)
+                                
+                                texto_boleto = f"N° {num_str} ({est_str})"
+                                
+                                # Mensaje con Emoji
+                                mensaje = (
+                                    f"Hola. Saludos, somos Sorteos Milán!!, aquí te enviamos el comprobante de tu "
+                                    f"BOLETO: {texto_boleto}, a nombre de {cliente_nom} para el sorteo "
+                                    f"'{sorteo_nom}' del día {fecha_sorteo} . ¡Suerte!🍀"
+                                )
+                                
+                                # Usamos api.whatsapp.com que carga mejor los emojis
+                                return f"https://api.whatsapp.com/send?phone={tel_clean}&text={urllib.parse.quote(mensaje)}"
 
                         else:
                             # BOLETO DISPONIBLE
@@ -873,44 +901,41 @@ def main():
                         partes_msg = [f"N° {fmt_num.format(d['numero'])} ({d['estado'].upper()})" for d in datos_sel]
                         txt_boletos = ", ".join(partes_msg)
                         
-                        # Mensaje largo y formal
                         tipo_txt = "los comprobantes de tus BOLETOS" if len(numeros_sel) > 1 else "el comprobante de tu BOLETO"
+                        
                         msg_wa = (
                             f"Hola. Saludos, somos Sorteos Milán!!, aquí te enviamos {tipo_txt}: "
                             f"{txt_boletos}, a nombre de {datos_c['nombre']} para el sorteo "
                             f"'{nombre_s}' del día {fecha_s} . ¡Suerte!🍀"
                         )
                         
-                        # --- LÓGICA DE TELÉFONO ROBUSTA ---
+                        # Lógica Permisiva (Igual a la función global)
                         tel_raw = datos_c['telefono']
                         tel_clean = "".join(filter(str.isdigit, str(tel_raw or "")))
-                        tel_final = ""
-
-                        # Aceptamos 10, 11 (con 0) o 12 (con 58) dígitos
+                        
+                        # Si es Venezuela (10 u 11 con 0), ajustamos. Si no, lo dejamos pasar.
                         if len(tel_clean) == 10: 
                             tel_final = "58" + tel_clean
                         elif len(tel_clean) == 11 and tel_clean.startswith("0"): 
                             tel_final = "58" + tel_clean[1:]
-                        elif len(tel_clean) == 12 and tel_clean.startswith("58"): 
-                            tel_final = tel_clean # Ya está listo
+                        else:
+                            tel_final = tel_clean # <--- ESTO HABILITA EXTRANJEROS
                         
-                        if tel_final:
+                        if len(tel_final) >= 7: # Validación mínima
                             link_wa = f"https://api.whatsapp.com/send?phone={tel_final}&text={urllib.parse.quote(msg_wa)}"
                             col_wa.link_button("📲 WhatsApp", link_wa, use_container_width=True)
                         else:
-                            # Muestra el número crudo para entender por qué falla
                             col_wa.warning(f"Tel Inválido: {tel_raw}")
                         
-                        # 2. PDF (NOMBRES NORMALES CON ESPACIOS)
+                        # 2. PDF (Nombres con espacios, sin guion bajo)
                         with col_pdf:
                             st.write("**Descargar PDFs:**")
                             
-                            # Preparar nombre cliente (Sin guiones bajos, solo espacios)
                             partes_nom = datos_c['nombre'].strip().upper().split()
                             if len(partes_nom) >= 3:
-                                nom_archivo_cli = f"{partes_nom[0]}_{partes_nom[2]}"
+                                nom_archivo_cli = f"{partes_nom[0]} {partes_nom[2]}"
                             elif len(partes_nom) == 2:
-                                nom_archivo_cli = f"{partes_nom[0]}_{partes_nom[1]}"
+                                nom_archivo_cli = f"{partes_nom[0]} {partes_nom[1]}"
                             else:
                                 nom_archivo_cli = partes_nom[0] if partes_nom else "CLIENTE"
 
@@ -924,7 +949,6 @@ def main():
                                 }
                                 pdf_data = generar_pdf_memoria(d['numero'], info_pdf, config_full, cantidad_boletos)
                                 
-                                # Nombre: 01 JUAN PEREZ (PAGADO).pdf (Con espacios)
                                 n_file = f"{fmt_num.format(d['numero'])} {nom_archivo_cli} ({d['estado'].upper()}).pdf"
                                 
                                 st.download_button(f"📄 {fmt_num.format(d['numero'])}", pdf_data, n_file, "application/pdf", key=f"d_{d['numero']}", use_container_width=True)
@@ -1082,5 +1106,4 @@ def main():
 if __name__ == "__main__":
     if check_password():
         main()
-
 
