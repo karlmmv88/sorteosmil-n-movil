@@ -755,13 +755,12 @@ def main():
                     etiqueta = f"{c[1]} | {c[2]}"
                     opciones_cliente[etiqueta] = c[0]
                     
-                    # 🔥 CORRECCIÓN: GUARDAMOS TODOS LOS DATOS (Cédula, Dirección, Código)
                     datos_cliente_map[c[0]] = {
                         'nombre': c[1], 
                         'telefono': c[2],
-                        'cedula': c[3],      # <--- Faltaba esto
-                        'direccion': c[4],   # <--- Faltaba esto
-                        'codigo': c[5]       # <--- Faltaba esto
+                        'cedula': c[3],
+                        'direccion': c[4],
+                        'codigo': c[5]
                     }
             
             cliente_sel = st.selectbox("👤 Buscar Cliente:", options=list(opciones_cliente.keys()), index=None, placeholder="Escribe el nombre...")
@@ -777,7 +776,8 @@ def main():
                 
                 if boletos_cli:
                     st.info(f"📋 Gestionando boletos de: **{datos_c['nombre']}**")
-                    
+                    fmt_num = "{:02d}" if cantidad_boletos <= 100 else "{:03d}"
+
                     # A. PANEL VISUAL
                     st.write("### 🎫 Estado Actual")
                     cols_info = st.columns(4) 
@@ -787,7 +787,6 @@ def main():
                         elif est == 'apartado': bg = "#FFC107"
                         else: bg = "#9e9e9e"
                         
-                        # USAMOS fmt_num
                         html_card = f"""<div style="background-color: {bg}; border-radius: 10px; padding: 10px; text-align: center; margin-bottom: 10px; color: white; font-weight: bold;">
                             <span style="font-size: 20px;">{fmt_num.format(num)}</span><br><span style="font-size: 10px;">{est.upper()}</span>
                         </div>"""
@@ -811,8 +810,6 @@ def main():
                         datos_boletos_map[num] = {'numero': num, 'estado': est, 'precio': pre, 'abonado': abo, 'fecha': f_asig}
                         
                         es_seleccionado = num in st.session_state.seleccion_actual
-                        
-                        # 🔥 BOTONES CON FORMATO
                         str_btn = fmt_num.format(num)
                         label_btn = f"✔ {str_btn}" if es_seleccionado else f"{str_btn}"
                         type_btn = "primary" if es_seleccionado else "secondary"
@@ -835,7 +832,6 @@ def main():
                         deuda = dato_unico['precio'] - dato_unico['abonado']
                         if deuda > 0.01: 
                             with st.container(border=True):
-                                # Título formateado
                                 st.write(f"💸 **Abonar: {fmt_num.format(dato_unico['numero'])}** (Deuda: ${deuda:.2f})")
                                 c1, c2 = st.columns([2,1])
                                 m = c1.number_input("Monto:", 0.0, deuda, step=1.0, label_visibility="collapsed")
@@ -873,49 +869,50 @@ def main():
                     # E. WHATSAPP Y PDF
                     col_wa, col_pdf = st.columns([1, 1])
                     if numeros_sel:
-                        # 1. WHATSAPP (Mensaje Oficial Restaurado y Lógica de Teléfono corregida)
-                        
-                        # Construcción del texto de los boletos
+                        # 1. WHATSAPP
                         partes_msg = [f"N° {fmt_num.format(d['numero'])} ({d['estado'].upper()})" for d in datos_sel]
                         txt_boletos = ", ".join(partes_msg)
                         
-                        # Mensaje largo y formal (El mismo de la versión PC/Individual pero pluralizado si es necesario)
+                        # Mensaje largo y formal
                         tipo_txt = "los comprobantes de tus BOLETOS" if len(numeros_sel) > 1 else "el comprobante de tu BOLETO"
-                        
                         msg_wa = (
                             f"Hola. Saludos, somos Sorteos Milán!!, aquí te enviamos {tipo_txt}: "
                             f"{txt_boletos}, a nombre de {datos_c['nombre']} para el sorteo "
                             f"'{nombre_s}' del día {fecha_s} . ¡Suerte!🍀"
                         )
                         
-                        # Lógica de Teléfono (Idéntica a get_whatsapp_link_exacto)
+                        # --- LÓGICA DE TELÉFONO ROBUSTA ---
                         tel_raw = datos_c['telefono']
                         tel_clean = "".join(filter(str.isdigit, str(tel_raw or "")))
-                        
                         tel_final = ""
+
+                        # Aceptamos 10, 11 (con 0) o 12 (con 58) dígitos
                         if len(tel_clean) == 10: 
                             tel_final = "58" + tel_clean
                         elif len(tel_clean) == 11 and tel_clean.startswith("0"): 
                             tel_final = "58" + tel_clean[1:]
+                        elif len(tel_clean) == 12 and tel_clean.startswith("58"): 
+                            tel_final = tel_clean # Ya está listo
                         
                         if tel_final:
                             link_wa = f"https://api.whatsapp.com/send?phone={tel_final}&text={urllib.parse.quote(msg_wa)}"
                             col_wa.link_button("📲 WhatsApp", link_wa, use_container_width=True)
                         else:
-                            col_wa.warning(f"Tel Inválido ({tel_raw})")
+                            # Muestra el número crudo para entender por qué falla
+                            col_wa.warning(f"Tel Inválido: {tel_raw}")
                         
-                        # 2. PDF (Con nombres corregidos con guion bajo)
+                        # 2. PDF (NOMBRES NORMALES CON ESPACIOS)
                         with col_pdf:
                             st.write("**Descargar PDFs:**")
                             
-                            # Preparar nombre cliente (Regla: 1ra y 3ra palabra si es largo)
+                            # Preparar nombre cliente (Sin guiones bajos, solo espacios)
                             partes_nom = datos_c['nombre'].strip().upper().split()
                             if len(partes_nom) >= 3:
-                                nom_archivo_cli = f"{partes_nom[0]}_{partes_nom[2]}"
+                                nom_archivo_cli = f"{partes_nom[0]} {partes_nom[2]}"
                             elif len(partes_nom) == 2:
-                                nom_archivo_cli = f"{partes_nom[0]}_{partes_nom[1]}"
+                                nom_archivo_cli = f"{partes_nom[0]} {partes_nom[1]}"
                             else:
-                                nom_archivo_cli = partes_nom[0]
+                                nom_archivo_cli = partes_nom[0] if partes_nom else "CLIENTE"
 
                             for d in datos_sel:
                                 info_pdf = {
@@ -927,7 +924,7 @@ def main():
                                 }
                                 pdf_data = generar_pdf_memoria(d['numero'], info_pdf, config_full, cantidad_boletos)
                                 
-                                # Nombre archivo: 01 JUAN_PEREZ (PAGADO).pdf
+                                # Nombre: 01 JUAN PEREZ (PAGADO).pdf (Con espacios)
                                 n_file = f"{fmt_num.format(d['numero'])} {nom_archivo_cli} ({d['estado'].upper()}).pdf"
                                 
                                 st.download_button(f"📄 {fmt_num.format(d['numero'])}", pdf_data, n_file, "application/pdf", key=f"d_{d['numero']}", use_container_width=True)
