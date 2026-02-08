@@ -659,9 +659,9 @@ def main():
                             # 1. Lógica de Nombre (Sin guiones, con espacios)
                             partes_nom = c_nom.strip().upper().split()
                             if len(partes_nom) >= 3:
-                                nom_archivo = f"{partes_nom[0]} {partes_nom[2]}"
+                                nom_archivo = f"{partes_nom[0]}_{partes_nom[2]}"
                             elif len(partes_nom) == 2:
-                                nom_archivo = f"{partes_nom[0]} {partes_nom[1]}"
+                                nom_archivo = f"{partes_nom[0]}_{partes_nom[1]}"
                             else:
                                 nom_archivo = partes_nom[0]
                             
@@ -1085,4 +1085,5 @@ def main():
 if __name__ == "__main__":
     if check_password():
         main()
+
 
