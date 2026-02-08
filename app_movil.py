@@ -604,13 +604,13 @@ def main():
                     # B. GESTIÓN INDIVIDUAL (1 Boleto)
                     if len(lista_busqueda) == 1:
                         numero = lista_busqueda[0]
-                        str_num = fmt_num.format(numero) # 🔥 Formateado para títulos
+                        str_num = fmt_num.format(numero)
 
                         if numero in mapa_resultados:
                             # BOLETO OCUPADO
                             row = mapa_resultados[numero]
-                            b_id, estado, b_precio, b_abonado = row[5], row[1], float(row[2]), float(row[3])
-                            c_nom, c_tel = row[7], row[8]
+                            b_id, estado, b_precio, b_abonado, b_fecha = row[5], row[1], float(row[2]), float(row[3]), row[4]
+                            c_nom, c_tel, c_ced, c_dir, c_cod = row[7], row[8], row[9], row[10], row[11]
                             
                             st.info(f"👤 **Cliente:** {c_nom} | 📞 {c_tel}")
                             
@@ -633,7 +633,7 @@ def main():
                             if estado != 'pagado' and (b_precio - b_abonado) > 0.01:
                                 st.divider()
                                 with st.container(border=True):
-                                    st.write(f"💸 **Abonar al N° {str_num}**") # 🔥 Título formateado
+                                    st.write(f"💸 **Abonar al N° {str_num}**")
                                     c_ab1, c_ab2 = st.columns([1, 1])
                                     monto_abono = c_ab1.number_input("Monto:", min_value=0.0, max_value=(b_precio-b_abonado), step=1.0, key="abono_indiv")
                                     if c_ab2.button("💾 GUARDAR", use_container_width=True, key="btn_save_abono"):
@@ -641,12 +641,41 @@ def main():
                                             nt = b_abonado + monto_abono
                                             ne = 'pagado' if (b_precio - nt) <= 0.01 else 'abonado'
                                             run_query("UPDATE boletos SET total_abonado=%s, estado=%s WHERE id=%s", (nt, ne, b_id), fetch=False)
+                                            run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle, monto) VALUES (%s, 'MOVIL', 'ABONO', %s, %s)", (id_sorteo, f"Abono {numero}", monto_abono), fetch=False)
                                             st.success("✅ Abonado"); time.sleep(1); st.rerun()
+                            
+                            st.divider()
+
+                            # --- SECCIÓN RECUPERADA: PDF Y WHATSAPP ---
+                            col_wa, col_pdf = st.columns([1, 1])
+                            
+                            # 1. Lógica de Nombre (Regla: 2 palabras=las 2; 3+=1ra y 3ra)
+                            partes_nom = c_nom.strip().upper().split()
+                            if len(partes_nom) >= 3:
+                                nom_archivo = f"{partes_nom[0]} {partes_nom[2]}"
+                            elif len(partes_nom) == 2:
+                                nom_archivo = f"{partes_nom[0]} {partes_nom[1]}"
+                            else:
+                                nom_archivo = partes_nom[0]
+                            
+                            n_file = f"{str_num} {nom_archivo} ({estado.upper()}).pdf"
+
+                            # 2. PDF
+                            info_pdf = {'cliente': c_nom, 'cedula': c_ced, 'telefono': c_tel, 'direccion': c_dir, 'codigo_cli': c_cod, 'estado': estado, 'precio': b_precio, 'abonado': b_abonado, 'fecha_asignacion': b_fecha}
+                            pdf_data = generar_pdf_memoria(numero, info_pdf, config_full, cantidad_boletos)
+                            col_pdf.download_button(f"📄 PDF", pdf_data, n_file, "application/pdf", use_container_width=True)
+
+                            # 3. WhatsApp (Usando tu función original correcta)
+                            link_wa = get_whatsapp_link_exacto(c_tel, numero, estado, c_nom, nombre_s, str(fecha_s), cantidad_boletos)
+                            if link_wa:
+                                col_wa.link_button("📲 WhatsApp", link_wa, use_container_width=True)
+                            else:
+                                col_wa.warning("Sin teléfono")
+
                         else:
                             # BOLETO DISPONIBLE
                             with st.form("venta_single"):
-                                # 🔥 Título formateado corregido
-                                st.write(f"### 📝 Vender Boleto {str_num}") 
+                                st.write(f"### 📝 Vender Boleto {str_num}")
                                 clientes = run_query("SELECT id, nombre_completo, codigo FROM clientes ORDER BY nombre_completo")
                                 opc_cli = {f"{c[1]} | {c[2] or 'S/C'}": c[0] for c in clientes} if clientes else {}
                                 nom_sel = st.selectbox("👤 Cliente:", options=list(opc_cli.keys()), index=None)
@@ -843,24 +872,55 @@ def main():
                     # E. WHATSAPP Y PDF
                     col_wa, col_pdf = st.columns([1, 1])
                     if numeros_sel:
-                        # Lista formateada para WhatsApp
+                        # 1. WHATSAPP: Lógica corregida basada en versión anterior
                         partes_msg = [f"N° {fmt_num.format(d['numero'])} ({d['estado'].upper()})" for d in datos_sel]
                         txt_boletos = ", ".join(partes_msg)
                         msg_wa = f"Hola. Boletos: {txt_boletos}. Sorteo {nombre_s}."
                         
-                        tel_clean = "".join(filter(str.isdigit, str(datos_c['telefono'] or "")))
-                        link_wa = f"https://api.whatsapp.com/send?phone=58{tel_clean}&text={urllib.parse.quote(msg_wa)}" if len(tel_clean) >= 10 else ""
+                        tel_raw = datos_c['telefono']
+                        # Limpieza estricta
+                        tel_clean = "".join(filter(str.isdigit, str(tel_raw or "")))
                         
-                        col_wa.link_button("📲 WhatsApp", link_wa if link_wa else "#", disabled=(not link_wa), use_container_width=True)
+                        # Regla VZLA (Copia exacta de tu lógica original)
+                        tel_final = ""
+                        if len(tel_clean) == 10: 
+                            tel_final = "58" + tel_clean
+                        elif len(tel_clean) == 11 and tel_clean.startswith("0"): 
+                            tel_final = "58" + tel_clean[1:]
                         
+                        if tel_final:
+                            link_wa = f"https://api.whatsapp.com/send?phone={tel_final}&text={urllib.parse.quote(msg_wa)}"
+                            col_wa.link_button("📲 WhatsApp", link_wa, use_container_width=True)
+                        else:
+                            col_wa.warning("Teléfono inválido")
+                        
+                        # 2. PDF: Regla de Nombres (1ra y 3ra palabra)
                         with col_pdf:
                             st.write("**Descargar PDFs:**")
+                            
+                            # Preparar nombre cliente
+                            partes_nom = datos_c['nombre'].strip().upper().split()
+                            if len(partes_nom) >= 3:
+                                nom_archivo_cli = f"{partes_nom[0]} {partes_nom[2]}"
+                            elif len(partes_nom) == 2:
+                                nom_archivo_cli = f"{partes_nom[0]} {partes_nom[1]}"
+                            else:
+                                nom_archivo_cli = partes_nom[0]
+
                             for d in datos_sel:
-                                info_pdf = {'cliente': datos_c['nombre'], 'cedula': datos_c['cedula'], 'telefono': datos_c['telefono'], 'direccion': datos_c['direccion'], 'codigo_cli': datos_c['codigo'], 'estado': d['estado'], 'precio': d['precio'], 'abonado': d['abonado'], 'fecha_asignacion': d['fecha']}
+                                info_pdf = {
+                                    'cliente': datos_c['nombre'], 'cedula': datos_c['cedula'], 
+                                    'telefono': datos_c['telefono'], 'direccion': datos_c['direccion'], 
+                                    'codigo_cli': datos_c['codigo'], 'estado': d['estado'], 
+                                    'precio': d['precio'], 'abonado': d['abonado'], 
+                                    'fecha_asignacion': d['fecha']
+                                }
                                 pdf_data = generar_pdf_memoria(d['numero'], info_pdf, config_full, cantidad_boletos)
-                                # Nombre archivo con formato
-                                num_f = fmt_num.format(d['numero'])
-                                st.download_button(f"📄 {num_f}", pdf_data, f"boleto_{num_f}.pdf", "application/pdf", key=f"d_{d['numero']}", use_container_width=True)
+                                
+                                # Nombre: 01 JUAN PEREZ (PAGADO).pdf
+                                n_file = f"{fmt_num.format(d['numero'])} {nom_archivo_cli} ({d['estado'].upper()}).pdf"
+                                
+                                st.download_button(f"📄 {fmt_num.format(d['numero'])}", pdf_data, n_file, "application/pdf", key=f"d_{d['numero']}", use_container_width=True)
                     else:
                         col_wa.button("📲 WhatsApp", disabled=True, use_container_width=True)
                         col_pdf.info("Selecciona para ver PDFs")
