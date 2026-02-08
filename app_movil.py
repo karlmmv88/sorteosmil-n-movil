@@ -498,7 +498,7 @@ def main():
         st.write("") 
 
         # ============================================================
-        #  MODO A: POR NÚMERO (Visualización Unificada)
+        #  MODO A: POR NÚMERO (Visualización Unificada y Ajustada)
         # ============================================================
         if modo == "🔢 Por N° de Boleto":
             c1, c2 = st.columns([2,1])
@@ -516,16 +516,15 @@ def main():
                                 lista_busqueda.append(val)
                 except: pass
 
+            # Botón buscar o enter
             if c2.button("🔍 Buscar", use_container_width=True) or lista_busqueda:
                 if not lista_busqueda:
                     st.warning("Introduce un número válido.")
                 else:
-                    # 1. RECUPERAR DATOS DE TODOS LOS NÚMEROS BUSCADOS
-                    # (Hacemos una query para ver cuáles están ocupados)
+                    # 1. CONSULTAR DATOS
                     lista_str = ",".join(map(str, lista_busqueda))
                     placeholders = ",".join(["%s"] * len(lista_busqueda))
                     
-                    # Traemos datos de los que existen en BD (Ocupados)
                     query = f"""
                         SELECT b.numero, b.estado, b.precio, b.total_abonado, b.fecha_asignacion, b.id, b.cliente_id,
                                c.nombre_completo, c.telefono, c.cedula, c.direccion, c.codigo
@@ -536,24 +535,17 @@ def main():
                     params = [id_sorteo] + lista_busqueda
                     resultados_ocupados = run_query(query, tuple(params))
                     
-                    # Mapear resultados por número para acceso rápido
                     mapa_resultados = {r[0]: r for r in resultados_ocupados} if resultados_ocupados else {}
                     
                     fmt_num = "{:02d}" if cantidad_boletos <= 100 else "{:03d}"
 
                     # ---------------------------------------------------------
-                    #  A. PANEL VISUAL (TARJETAS RELLENAS)
+                    #  A. PANEL VISUAL (TARJETAS PEQUEÑAS - IGUAL A MODO B)
                     # ---------------------------------------------------------
                     st.write("### 🎫 Estado Actual")
                     
-                    # Columnas dinámicas: Si es 1 boleto, lo centramos grande. Si son varios, grilla.
-                    if len(lista_busqueda) == 1:
-                        cols_vis = st.columns([1, 2, 1]) # Usamos la del medio
-                        col_target = cols_vis[1]
-                        idx_col = 0
-                    else:
-                        cols_vis = st.columns(4)
-                        col_target = None # Usaremos índice
+                    # 🔥 CAMBIO 1: Siempre 4 columnas para que el cuadro sea pequeño
+                    cols_vis = st.columns(4)
                     
                     for i, num_buscado in enumerate(lista_busqueda):
                         # Determinar datos y estilo
@@ -561,23 +553,22 @@ def main():
                             # ESTÁ OCUPADO
                             dato = mapa_resultados[num_buscado]
                             estado = dato[1]
-                            nombre_cli = dato[7]
                             
                             if estado == 'abonado': 
                                 bg_color = "#1a73e8" # Azul
                             elif estado == 'apartado': 
-                                bg_color = "#ff9800" # Naranja
+                                bg_color = "#FFC107" # 🔥 CAMBIO: Amarillo Oro (Se ve amarillo pero lee texto blanco)
                             elif estado == 'pagado': 
                                 bg_color = "#9e9e9e" # Gris
                             
-                            txt_estado = f"{estado.upper()}<br><span style='font-size:12px; opacity:0.8'>{nombre_cli[:15]}...</span>"
+                            # 🔥 CAMBIO 2: Solo estado, SIN nombre
+                            txt_estado = estado.upper()
                         else:
                             # ESTÁ DISPONIBLE
                             bg_color = "#4CAF50" # Verde
-                            estado = "disponible"
                             txt_estado = "DISPONIBLE"
 
-                        # HTML de la Tarjeta
+                        # HTML de la Tarjeta (Idéntico a Modo B)
                         html_card = f"""
                         <div style="
                             background-color: {bg_color};
@@ -591,17 +582,15 @@ def main():
                             <div style="font-size: 24px; font-weight: bold; line-height: 1.2;">
                                 {fmt_num.format(num_buscado)}
                             </div>
-                            <div style="font-size: 14px; text-transform: uppercase; margin-top: 5px;">
+                            <div style="font-size: 14px; text-transform: uppercase; margin-top: 5px; opacity: 0.9;">
                                 {txt_estado}
                             </div>
                         </div>
                         """
                         
-                        # Renderizar
-                        if len(lista_busqueda) == 1:
-                            with cols_vis[1]: st.markdown(html_card, unsafe_allow_html=True)
-                        else:
-                            with cols_vis[i % 4]: st.markdown(html_card, unsafe_allow_html=True)
+                        # Renderizar en la columna correspondiente
+                        with cols_vis[i % 4]: 
+                            st.markdown(html_card, unsafe_allow_html=True)
                     
                     st.divider()
 
@@ -625,7 +614,7 @@ def main():
                             m2.metric("Precio", f"${b_precio}")
                             m3.metric("Deuda", f"${b_precio - b_abonado:.2f}")
 
-                            # 1. ZONA DE ABONO (Estilo nuevo)
+                            # 1. ZONA DE ABONO
                             if (b_precio - b_abonado) > 0.01:
                                 with st.container(border=True):
                                     st.write(f"💸 **Abonar al boleto {fmt_num.format(numero)}**")
@@ -659,7 +648,6 @@ def main():
                             datos_pdf = {'cliente': c_nom, 'cedula': c_ced, 'telefono': c_tel, 'direccion': c_dir, 'codigo_cli': c_cod, 'estado': estado, 'precio': b_precio, 'abonado': b_abonado, 'fecha_asignacion': b_fecha}
                             pdf_bytes = generar_pdf_memoria(numero, datos_pdf, config_full, cantidad_boletos)
                             
-                            # Nombre archivo
                             num_file = fmt_num.format(numero)
                             partes = c_nom.strip().upper().split()
                             nom_archivo = f"{partes[0]} {partes[2]}" if len(partes) >= 4 else (f"{partes[0]} {partes[1]}" if len(partes) >= 2 else partes[0])
@@ -700,7 +688,6 @@ def main():
                     #  C. LÓGICA DE GESTIÓN (MÚLTIPLE)
                     # ---------------------------------------------------------
                     elif len(lista_busqueda) > 1:
-                        # Verificar si hay ocupados
                         ocupados = [n for n in lista_busqueda if n in mapa_resultados]
                         
                         if ocupados:
@@ -771,10 +758,10 @@ def main():
                     fmt_num = "{:02d}" if cantidad_boletos <= 100 else "{:03d}"
 
                     # ---------------------------------------------------------
-                    #  A. PANEL INFORMATIVO (TARJETAS RELLENAS GRANDES)
+                    #  A. PANEL INFORMATIVO (TARJETAS PEQUEÑAS - COLOR ORO)
                     # ---------------------------------------------------------
                     st.write("### 🎫 Estado Actual")
-                    cols_info = st.columns(3) # 3 por fila para que sean grandes
+                    cols_info = st.columns(4) # 4 columnas para igualar tamaño con Modo A
                     
                     for i, b in enumerate(boletos_cli):
                         num, est, pre, abo, f_asig = b
@@ -782,10 +769,10 @@ def main():
                         # Definir colores de FONDO
                         bg_color = "#9e9e9e" # Gris (Pagado/Default)
                         if est == 'abonado': bg_color = "#1a73e8" # Azul
-                        elif est == 'apartado': bg_color = "#ff9800" # Naranja
+                        elif est == 'apartado': bg_color = "#FFC107" # Amarillo Oro
                         elif est == 'pagado': bg_color = "#9e9e9e" # Gris
                         
-                        # Renderizar tarjeta RELLENA con HTML/CSS
+                        # Renderizar tarjeta RELLENA
                         html_card = f"""
                         <div style="
                             background-color: {bg_color};
@@ -804,10 +791,8 @@ def main():
                             </div>
                         </div>
                         """
-                        with cols_info[i % 3]:
+                        with cols_info[i % 4]:
                             st.markdown(html_card, unsafe_allow_html=True)
-                    
-                    st.divider()
 
                     # ---------------------------------------------------------
                     #  B. PANEL DE SELECCIÓN (Botones Interactivos)
