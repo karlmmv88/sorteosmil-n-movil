@@ -796,11 +796,51 @@ def main():
                     # ---------------------------------------------------------
                     if st.session_state.seleccion_actual:
                         numeros_sel = sorted(st.session_state.seleccion_actual)
+                        # Recuperamos los datos completos de los seleccionados usando el mapa
                         datos_sel = [datos_boletos_map[n] for n in numeros_sel]
                         
                         st.write(f"**Seleccionados ({len(numeros_sel)}):** {', '.join([fmt_num.format(n) for n in numeros_sel])}")
                         
-                        # --- BOTONES DE ACCIÓN ---
+                        # ==========================================================
+                        #  1. ZONA DE ABONO (SOLO SI HAY 1 SELECCIONADO)
+                        # ==========================================================
+                        if len(numeros_sel) == 1:
+                            dato_unico = datos_sel[0] # Datos del boleto único
+                            deuda_actual = dato_unico['precio'] - dato_unico['abonado']
+                            
+                            with st.container(border=True):
+                                st.write(f"💸 **Abonar al boleto {fmt_num.format(dato_unico['numero'])}**")
+                                c_ab_1, c_ab_2, c_ab_3 = st.columns([2, 2, 2])
+                                
+                                c_ab_1.caption(f"Deuda: ${deuda_actual:.2f}")
+                                monto_abono = c_ab_2.number_input("Monto:", min_value=0.0, max_value=deuda_actual, step=1.0, key="input_abono_cli")
+                                
+                                if c_ab_3.button("💾 GUARDAR ABONO", use_container_width=True):
+                                    if monto_abono > 0:
+                                        nuevo_total = dato_unico['abonado'] + monto_abono
+                                        # Calcular nuevo estado
+                                        nuevo_estado = 'pagado' if (dato_unico['precio'] - nuevo_total) <= 0.01 else 'abonado'
+                                        
+                                        # Actualizar BD
+                                        run_query("UPDATE boletos SET total_abonado=%s, estado=%s WHERE sorteo_id=%s AND numero=%s", 
+                                                 (nuevo_total, nuevo_estado, id_sorteo, dato_unico['numero']), fetch=False)
+                                        
+                                        # Historial
+                                        run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle, monto) VALUES (%s, 'MOVIL', 'ABONO_CLIENTE', %s, %s)", 
+                                                 (id_sorteo, f"Abono a boleto {dato_unico['numero']}", monto_abono), fetch=False)
+                                        
+                                        st.session_state.seleccion_actual = [] # Limpiar para refrescar
+                                        st.success("✅ Abono registrado correctamente"); time.sleep(1); st.rerun()
+                                    else:
+                                        st.warning("Ingresa un monto mayor a 0")
+                        else:
+                            st.info("💡 Para registrar un abono parcial, selecciona un solo boleto.")
+
+                        st.divider()
+
+                        # ==========================================================
+                        #  2. BOTONES DE ACCIÓN MASIVA (PAGAR TODO / APARTAR / LIBERAR)
+                        # ==========================================================
                         c_acc1, c_acc2, c_acc3 = st.columns(3)
                         
                         if c_acc1.button("✅ PAGAR SELECCIÓN", use_container_width=True):
@@ -808,7 +848,7 @@ def main():
                                 if d['estado'] != 'pagado':
                                     run_query("UPDATE boletos SET estado='pagado', total_abonado=%s WHERE sorteo_id=%s AND numero=%s", (d['precio'], id_sorteo, d['numero']), fetch=False)
                                     run_query("INSERT INTO historial (sorteo_id, usuario, accion, detalle) VALUES (%s, 'MOVIL', 'PAGO_MASIVO', %s)", (id_sorteo, f"Pago boleto {d['numero']}"), fetch=False)
-                            st.session_state.seleccion_actual = [] # Limpiar selección
+                            st.session_state.seleccion_actual = [] 
                             st.success("Pagados correctamente"); time.sleep(1); st.rerun()
                             
                         if c_acc2.button("📌 APARTAR SELECCIÓN", use_container_width=True):
@@ -826,7 +866,9 @@ def main():
 
                         st.divider()
                         
-                        # --- WHATSAPP Y PDF (Para la selección) ---
+                        # ==========================================================
+                        #  3. WHATSAPP Y PDF
+                        # ==========================================================
                         col_wa, col_pdf = st.columns([1, 1])
                         
                         # WhatsApp
@@ -848,6 +890,8 @@ def main():
                             elif len(tel_clean) == 11 and tel_clean.startswith("0"): tel_clean = "58" + tel_clean[1:]
                             link = f"https://api.whatsapp.com/send?phone={tel_clean}&text={urllib.parse.quote(msg_wa)}"
                             col_wa.link_button("📲 WhatsApp Selección", link, use_container_width=True)
+                        else:
+                            col_wa.warning("Sin teléfono")
                         
                         # PDFs
                         with col_pdf:
