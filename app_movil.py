@@ -873,35 +873,42 @@ def main():
                     # E. WHATSAPP Y PDF
                     col_wa, col_pdf = st.columns([1, 1])
                     if numeros_sel:
-                        # 1. WHATSAPP
+                        # 1. WHATSAPP (Mensaje Oficial Restaurado y Lógica de Teléfono corregida)
+                        
+                        # Construcción del texto de los boletos
                         partes_msg = [f"N° {fmt_num.format(d['numero'])} ({d['estado'].upper()})" for d in datos_sel]
                         txt_boletos = ", ".join(partes_msg)
-                        msg_wa = f"Hola. Boletos: {txt_boletos}. Sorteo {nombre_s}."
                         
+                        # Mensaje largo y formal (El mismo de la versión PC/Individual pero pluralizado si es necesario)
+                        tipo_txt = "los comprobantes de tus BOLETOS" if len(numeros_sel) > 1 else "el comprobante de tu BOLETO"
+                        
+                        msg_wa = (
+                            f"Hola. Saludos, somos Sorteos Milán!!, aquí te enviamos {tipo_txt}: "
+                            f"{txt_boletos}, a nombre de {datos_c['nombre']} para el sorteo "
+                            f"'{nombre_s}' del día {fecha_s} . ¡Suerte!🍀"
+                        )
+                        
+                        # Lógica de Teléfono (Idéntica a get_whatsapp_link_exacto)
                         tel_raw = datos_c['telefono']
                         tel_clean = "".join(filter(str.isdigit, str(tel_raw or "")))
                         
                         tel_final = ""
-                        # Lógica corregida para VZLA
                         if len(tel_clean) == 10: 
                             tel_final = "58" + tel_clean
                         elif len(tel_clean) == 11 and tel_clean.startswith("0"): 
                             tel_final = "58" + tel_clean[1:]
-                        elif len(tel_clean) == 12 and tel_clean.startswith("58"): # Ya tiene código
-                            tel_final = tel_clean
                         
                         if tel_final:
                             link_wa = f"https://api.whatsapp.com/send?phone={tel_final}&text={urllib.parse.quote(msg_wa)}"
                             col_wa.link_button("📲 WhatsApp", link_wa, use_container_width=True)
                         else:
-                            # Si falla, mostramos el botón deshabilitado pero con texto claro
-                            col_wa.warning(f"Tel Inválido: {tel_raw}")
+                            col_wa.warning(f"Tel Inválido ({tel_raw})")
                         
-                        # 2. PDF (Con guiones bajos)
+                        # 2. PDF (Con nombres corregidos con guion bajo)
                         with col_pdf:
                             st.write("**Descargar PDFs:**")
                             
-                            # Preparar nombre cliente
+                            # Preparar nombre cliente (Regla: 1ra y 3ra palabra si es largo)
                             partes_nom = datos_c['nombre'].strip().upper().split()
                             if len(partes_nom) >= 3:
                                 nom_archivo_cli = f"{partes_nom[0]}_{partes_nom[2]}"
@@ -920,7 +927,7 @@ def main():
                                 }
                                 pdf_data = generar_pdf_memoria(d['numero'], info_pdf, config_full, cantidad_boletos)
                                 
-                                # Nombre: 01 JUAN_PEREZ (PAGADO).pdf
+                                # Nombre archivo: 01 JUAN_PEREZ (PAGADO).pdf
                                 n_file = f"{fmt_num.format(d['numero'])} {nom_archivo_cli} ({d['estado'].upper()}).pdf"
                                 
                                 st.download_button(f"📄 {fmt_num.format(d['numero'])}", pdf_data, n_file, "application/pdf", key=f"d_{d['numero']}", use_container_width=True)
