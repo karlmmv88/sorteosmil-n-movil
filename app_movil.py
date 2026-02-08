@@ -43,15 +43,20 @@ def run_query(query, params=None, fetch=True):
         return None
 
 # ============================================================================
-#  1. FORMATO DE WHATSAPP (Idéntico a gestion_boletos.py / servicios.py)
+#  1. FORMATO DE WHATSAPP (Global - Con Emoji y Soporte Extranjero)
 # ============================================================================
 def get_whatsapp_link_exacto(telefono, boleto_num, estado, cliente_nom, sorteo_nom, fecha_sorteo, cantidad_boletos=1000):
     if not telefono: return ""
     
-    # Limpieza de teléfono
+    # Limpieza básica
     tel_clean = "".join(filter(str.isdigit, str(telefono)))
-    if len(tel_clean) == 10: tel_clean = "58" + tel_clean
-    elif len(tel_clean) == 11 and tel_clean.startswith("0"): tel_clean = "58" + tel_clean[1:]
+    
+    # Lógica Venezuela: Si es 10 dígitos (414...) agrega 58. Si es 11 (0414...) cambia 0 por 58.
+    # Si tiene otra longitud (ej: extranjero), se deja tal cual.
+    if len(tel_clean) == 10: 
+        tel_clean = "58" + tel_clean
+    elif len(tel_clean) == 11 and tel_clean.startswith("0"): 
+        tel_clean = "58" + tel_clean[1:]
     
     # Formateo de Estado
     est_str = estado.upper()
@@ -59,20 +64,20 @@ def get_whatsapp_link_exacto(telefono, boleto_num, estado, cliente_nom, sorteo_n
     elif estado == 'abonado': est_str = "ABONADO"
     elif estado == 'apartado': est_str = "APARTADO"
     
-    # 🔥 CORRECCIÓN: Formato dinámico de ceros (01 vs 001)
     fmt_num = "{:02d}" if cantidad_boletos <= 100 else "{:03d}"
     num_str = fmt_num.format(boleto_num)
     
     texto_boleto = f"N° {num_str} ({est_str})"
     
-    # Mensaje exacto de PC
+    # Mensaje con Emoji 🍀
     mensaje = (
         f"Hola. Saludos, somos Sorteos Milán!!, aquí te enviamos el comprobante de tu "
         f"BOLETO: {texto_boleto}, a nombre de {cliente_nom} para el sorteo "
         f"'{sorteo_nom}' del día {fecha_sorteo} . ¡Suerte!🍀"
     )
     
-    return f"https://wa.me/{tel_clean}?text={urllib.parse.quote(mensaje)}"
+    # Usamos api.whatsapp.com que carga mejor los emojis
+    return f"https://api.whatsapp.com/send?phone={tel_clean}&text={urllib.parse.quote(mensaje)}"
 
 # ============================================================================
 #  2. PDF DIGITAL (APP MÓVIL - MINÚSCULAS am/pm)
@@ -601,8 +606,7 @@ def main():
                     
                     st.divider()
 
-
-# ---------------------------------------------------------
+                    # ---------------------------------------------------------
                     #  GESTIÓN INDIVIDUAL (1 Boleto)
                     # ---------------------------------------------------------
                     if len(lista_busqueda) == 1:
@@ -649,34 +653,32 @@ def main():
                             
                             st.divider()
 
-                            # --- SECCIÓN PDF Y WHATSAPP (CORREGIDA) ---
+                            # --- SECCIÓN PDF Y WHATSAPP ---
                             col_wa, col_pdf = st.columns([1, 1])
                             
-                            # 1. Lógica de Nombre
+                            # 1. Lógica de Nombre (Sin guiones, con espacios)
                             partes_nom = c_nom.strip().upper().split()
                             if len(partes_nom) >= 3:
                                 nom_archivo = f"{partes_nom[0]} {partes_nom[2]}"
                             elif len(partes_nom) == 2:
                                 nom_archivo = f"{partes_nom[0]} {partes_nom[1]}"
                             else:
-                                nom_archivo = partes_nom[0] if partes_nom else "CLIENTE"
+                                nom_archivo = partes_nom[0]
                             
                             n_file = f"{str_num} {nom_archivo} ({estado.upper()}).pdf"
 
                             # 2. PDF
                             info_pdf = {'cliente': c_nom, 'cedula': c_ced, 'telefono': c_tel, 'direccion': c_dir, 'codigo_cli': c_cod, 'estado': estado, 'precio': b_precio, 'abonado': b_abonado, 'fecha_asignacion': b_fecha}
                             pdf_data = generar_pdf_memoria(numero, info_pdf, config_full, cantidad_boletos)
-                            
-                            with col_pdf:
-                                st.download_button(f"📄 PDF", pdf_data, n_file, "application/pdf", use_container_width=True)
+                            col_pdf.download_button(f"📄 PDF", pdf_data, n_file, "application/pdf", use_container_width=True)
 
-                            # 3. WhatsApp (Usando la función GLOBAL, sin redefinirla)
-                            with col_wa:
-                                link_wa = get_whatsapp_link_exacto(c_tel, numero, estado, c_nom, nombre_s, str(fecha_s), cantidad_boletos)
-                                if link_wa:
-                                    st.link_button("📲 WhatsApp", link_wa, use_container_width=True)
-                                else:
-                                    st.warning("Sin teléfono")
+                            # 3. WhatsApp (Llamada a la función global corregida)
+                            link_wa = get_whatsapp_link_exacto(c_tel, numero, estado, c_nom, nombre_s, str(fecha_s), cantidad_boletos)
+                            
+                            if link_wa:
+                                col_wa.link_button("📲 WhatsApp", link_wa, use_container_width=True)
+                            else:
+                                col_wa.warning("Sin teléfono")
 
                         else:
                             # BOLETO DISPONIBLE
