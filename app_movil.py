@@ -714,7 +714,7 @@ def main():
                 if boletos_cli:
                     st.info(f"📋 Gestionando boletos de: **{datos_c['nombre']}**")
                     
-                    # --- NUEVO: PANEL VISUAL DE BOLETOS CON COLORES ---
+    # --- NUEVO: PANEL VISUAL DE BOLETOS CON COLORES (SVG) ---
                     st.write("Estado de sus boletos:")
                     fmt_num = "{:02d}" if cantidad_boletos <= 100 else "{:03d}"
                     
@@ -724,34 +724,50 @@ def main():
                     for i, b in enumerate(boletos_cli):
                         num, est, pre, abo, f_asig = b
                         
-                        # Definir color y emoji según estado
+                        # 1. Definir colores exactos para el SVG
+                        hex_color = "#e0e0e0" # Gris claro (Default)
                         color_txt = "grey"
-                        emoji = "⚪"
+                        
                         if est == 'abonado': 
+                            hex_color = "#1a73e8" # Azul
                             color_txt = "blue"
-                            emoji = "🔵"
                         elif est == 'apartado': 
-                            color_txt = "orange" # Usamos orange para simular amarillo/dorado visible
-                            emoji = "🟡"
+                            hex_color = "#ffc107" # Amarillo/Dorado
+                            color_txt = "orange"
                         elif est == 'pagado': 
+                            hex_color = "#9e9e9e" # Gris Oscuro
                             color_txt = "grey"
-                            emoji = "⚪"
+
+                        # 2. Crear el Círculo SVG
+                        svg_circle = f'''
+                        <svg width="20" height="20" style="vertical-align: middle; margin-bottom: 2px;">
+                            <circle cx="10" cy="10" r="8" fill="{hex_color}" stroke="gray" stroke-width="1" />
+                        </svg>
+                        '''
                             
-                        # Mostrar boleto coloreado en la grilla
+                        # 3. Renderizar (Círculo + Texto)
                         with cols_vis[i % 4]:
-                            st.markdown(f":{color_txt}[**🎟️ {fmt_num.format(num)}**]<br>{emoji} {est.upper()}", unsafe_allow_html=True)
+                            st.markdown(
+                                f"{svg_circle} :{color_txt}[**{fmt_num.format(num)}**]<br>"
+                                f"<span style='font-size:12px; color: #555'>{est.upper()}</span>", 
+                                unsafe_allow_html=True
+                            )
                     
                     st.divider()
 
-                    # Preparar opciones para el Selector (Con Emojis para ayudar)
+                    # Preparar opciones para el Selector (Con Emojis de Cuadrados)
                     opc_boletos = {}
                     for b in boletos_cli:
                         num, est, pre, abo, f_asig = b
                         
-                        emoji_sel = "❓"
-                        if est == 'abonado': emoji_sel = "🔵"
-                        elif est == 'apartado': emoji_sel = "🟡"
-                        elif est == 'pagado': emoji_sel = "⚪"
+                        # Usamos emojis de CUADRADOS para uniformidad
+                        emoji_sel = "⬜" 
+                        if est == 'abonado': 
+                            emoji_sel = "🟦" # Cuadrado Azul
+                        elif est == 'apartado': 
+                            emoji_sel = "🟧" # Cuadrado Naranja
+                        elif est == 'pagado': 
+                            emoji_sel = "⬜" # Cuadrado Blanco
                         
                         lbl = f"{emoji_sel} {fmt_num.format(num)} ({est.upper()})"
                         opc_boletos[lbl] = {'numero': num, 'estado': est, 'precio': pre, 'abonado': abo, 'fecha': f_asig}
