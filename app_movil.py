@@ -492,29 +492,39 @@ def main():
         st.write("### 📊 Estado del Sorteo")
         ver_ocupados = st.checkbox("Mostrar Ocupados (Amarillo)", value=True)
         
-        # Generar Imagen
+        # 1. Generar Imagen
         img_bytes = generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, mostrar_ocupados=ver_ocupados)
         st.image(img_bytes, caption="Actualizado en tiempo real", use_container_width=True)
         
-        # --- NUEVO: RESUMEN PEQUEÑO DEBAJO DE LA IMAGEN ---
-        # Consultamos cantidad de ocupados y suma total de sus precios
-        datos_resumen = run_query("SELECT COUNT(*), SUM(precio) FROM boletos WHERE sorteo_id = %s", (id_sorteo,))
-        total_asignados = 0
-        total_recaudar = 0.0
-        
-        if datos_resumen:
-            total_asignados = datos_resumen[0][0] or 0
-            total_recaudar = float(datos_resumen[0][1] or 0)
+        # 2. Calcular Totales (Asignados y Dinero)
+        try:
+            # Hacemos la consulta
+            datos_resumen = run_query("SELECT COUNT(*), SUM(precio) FROM boletos WHERE sorteo_id = %s", (id_sorteo,))
             
-        # Mostramos en una sola línea, pequeño (caption) y centrado visualmente
-        st.markdown(
-            f"<p style='text-align: center; color: #666; font-size: 14px; margin-top: -10px;'>"
-            f"🎟️ Asignados: <b>{total_asignados}</b> &nbsp;|&nbsp; 💰 Total a Recaudar: <b>${total_recaudar:,.2f}</b>"
-            f"</p>", 
-            unsafe_allow_html=True
-        )
-        
-        # Botón Descarga
+            # Valores por defecto
+            t_asignados = 0
+            t_monto = 0.0
+            
+            # Si hay datos, los procesamos
+            if datos_resumen and datos_resumen[0]:
+                fila = datos_resumen[0]
+                t_asignados = fila[0] or 0          # Cantidad (Count)
+                t_monto = float(fila[1] or 0.0)     # Suma Precio
+            
+            # 3. Mostrar Resumen (Centrado y legible)
+            st.markdown(
+                f"""
+                <div style="text-align: center; margin-top: -10px; margin-bottom: 15px; font-size: 15px;">
+                    🎟️ Asignados: <b>{t_asignados}</b> &nbsp;|&nbsp; 💰 Recaudar: <b>${t_monto:,.2f}</b>
+                </div>
+                """, 
+                unsafe_allow_html=True
+            )
+        except Exception as e:
+            # Si algo falla en el cálculo, no rompemos la app, solo mostramos error pequeño
+            st.error(f"Error calculando totales: {e}")
+
+        # 4. Botón Descarga
         nombre_archivo = "Tabla_ConOcupados.jpg" if ver_ocupados else "Tabla_Limpia.jpg"
         st.download_button("⬇️ DESCARGAR IMAGEN", img_bytes, nombre_archivo, "image/jpeg", use_container_width=True)
         
