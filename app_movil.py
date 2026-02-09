@@ -478,11 +478,12 @@ def main():
 
     # 2. Formatear Hora (hh:mm pm)
     try:
-        # Asumiendo que hora_raw viene como HH:MM:SS
+        # Intentamos convertir si viene como HH:MM:SS
         h_obj = datetime.strptime(str(hora_raw), '%H:%M:%S')
         hora_s = h_obj.strftime('%I:%M %p').lower() # Ej: 04:45 pm
     except:
-        hora_s = str(hora_raw)
+        # Si falla (ej: ya viene como texto "04:45 PM"), forzamos minúsculas
+        hora_s = str(hora_raw).lower()
     
     # 🔥 DETECCIÓN AUTOMÁTICA DE CANTIDAD
     cantidad_boletos = 1000
