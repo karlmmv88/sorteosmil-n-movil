@@ -465,7 +465,20 @@ def main():
     
     if not nom_sorteo: return
     s_data = opciones_sorteo[nom_sorteo]
-    id_sorteo, nombre_s, precio_s, fecha_s = s_data[0], s_data[1], float(s_data[2] or 0), s_data[3]
+    # Extraemos los datos crudos (fecha_raw)
+    id_sorteo, nombre_s, precio_s, fecha_raw = s_data[0], s_data[1], float(s_data[2] or 0), s_data[3]
+    
+    # 🔥 CAMBIO: Formatear fecha a dd/mm/yyyy para todo el sistema
+    try:
+        # Si la base de datos devuelve un objeto fecha, lo formateamos
+        fecha_s = fecha_raw.strftime('%d/%m/%Y')
+    except:
+        # Si falla (o es texto), intentamos convertirlo o lo dejamos igual
+        try:
+            f_obj = datetime.strptime(str(fecha_raw), '%Y-%m-%d')
+            fecha_s = f_obj.strftime('%d/%m/%Y')
+        except:
+            fecha_s = str(fecha_raw)
     
     # 🔥 DETECCIÓN AUTOMÁTICA DE CANTIDAD
     cantidad_boletos = 1000
