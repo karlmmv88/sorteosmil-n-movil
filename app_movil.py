@@ -935,52 +935,107 @@ def main():
                         col_wa.button("📲 WhatsApp", disabled=True, use_container_width=True)
                         col_pdf.info("Selecciona para ver PDFs")
                         
-    # ---------------- PESTAÑA CLIENTES ----------------
-    with tab_clientes: # <--- ¡ESTO TAMBIÉN FALTABA!
+# ---------------- PESTAÑA CLIENTES ----------------
+    with tab_clientes:
         st.header("Gestión Clientes")
-        with st.expander("Nuevo Cliente"):
+        
+        # --- FORMULARIO DE REGISTRO MEJORADO ---
+        with st.expander("➕ Nuevo Cliente", expanded=False):
             with st.form("new_cli"):
-                nn = st.text_input("Nombre").upper()
-                nc = st.text_input("Cédula")
+                st.write("📝 **Datos del Cliente**")
+                nn = st.text_input("Nombre Completo").upper()
+                
+                # Selector de Tipo de Cédula + Campo de Número
+                c_tipo, c_ced = st.columns([1, 3])
+                tipo_doc = c_tipo.selectbox("Tipo", ["V", "E"], label_visibility="collapsed")
+                ced_num = c_ced.text_input("Cédula", placeholder="Ej: 12345678", label_visibility="collapsed")
+                
                 nt = st.text_input("Teléfono")
                 nd = st.text_input("Dirección")
-                if st.form_submit_button("Guardar"):
-                    if nn and nt:
-                        cod = datetime.now().strftime("%H%M%S")
-                        run_query("INSERT INTO clientes (codigo, nombre_completo, cedula, telefono, direccion, fecha_registro) VALUES (%s, %s, %s, %s, %s, NOW())", (cod, nn, nc, nt, nd), fetch=False)
-                        st.success("Guardado"); st.rerun()
-                    else: st.error("Faltan datos")
+                
+                if st.form_submit_button("💾 Guardar Cliente", use_container_width=True):
+                    if nn and ced_num and nt:
+                        # 1. Formatear Cédula
+                        cedula_final = f"{tipo_doc}-{ced_num}"
+                        
+                        # 2. Generar Código Secuencial Inteligente (Busca el menor disponible)
+                        codigos_existentes = set()
+                        rows = run_query("SELECT codigo FROM clientes")
+                        if rows:
+                            for r in rows:
+                                try:
+                                    # Convertimos a entero para ignorar ceros a la izquierda
+                                    codigos_existentes.add(int(r[0]))
+                                except: pass
+                        
+                        # Empezamos desde el 1 y buscamos el primer hueco libre
+                        nuevo_codigo = 1
+                        while nuevo_codigo in codigos_existentes:
+                            nuevo_codigo += 1
+                        
+                        # Formateamos a 6 dígitos (Ej: 000291)
+                        cod_final = f"{nuevo_codigo:06d}"
+                        
+                        # 3. Guardar en BD
+                        run_query("""
+                            INSERT INTO clientes (codigo, nombre_completo, cedula, telefono, direccion, fecha_registro) 
+                            VALUES (%s, %s, %s, %s, %s, NOW())
+                        """, (cod_final, nn, cedula_final, nt, nd), fetch=False)
+                        
+                        st.success(f"✅ Cliente registrado con Código: {cod_final}")
+                        time.sleep(1.5)
+                        st.rerun()
+                    else:
+                        st.error("⚠️ Faltan datos obligatorios (Nombre, Cédula o Teléfono)")
         
-        # Lista y Edición
-        q = st.text_input("Buscar cliente...")
-        sql = "SELECT id, nombre_completo, cedula, telefono, direccion FROM clientes"
+        st.divider()
+        
+        # --- LISTA Y EDICIÓN ---
+        q = st.text_input("🔍 Buscar cliente (Nombre o Cédula)...")
+        sql = "SELECT id, nombre_completo, cedula, telefono, direccion, codigo FROM clientes"
         if q: sql += f" WHERE nombre_completo ILIKE '%{q}%' OR cedula ILIKE '%{q}%'"
         sql += " ORDER BY id DESC LIMIT 15"
         res = run_query(sql)
         
         if res:
             for c in res:
+                # c: [0=id, 1=nombre, 2=cedula, 3=tel, 4=dir, 5=codigo]
                 with st.container(border=True):
                     c1, c2 = st.columns([3,1])
-                    c1.write(f"**{c[1]}**\n🆔 {c[2]} | 📞 {c[3]} | 📍 {c[4]}")
-                    if c2.button("Editar", key=c[0]):
-                        st.session_state.edit_id = c[0]
-                        st.session_state.edit_vals = c
+                    with c1:
+                        st.markdown(f"**{c[1]}**")
+                        st.caption(f"🆔 {c[2]} | 🔑 Cód: {c[5]}")
+                        st.caption(f"📞 {c[3]} | 📍 {c[4]}")
+                    with c2:
+                        if st.button("✏️", key=f"edit_{c[0]}"):
+                            st.session_state.edit_id = c[0]
+                            st.session_state.edit_vals = c
             
+            # --- MODAL DE EDICIÓN (Al final de la lista) ---
             if 'edit_id' in st.session_state:
                 id_e = st.session_state.edit_id
                 vals = st.session_state.edit_vals
+                
                 st.markdown("---")
-                st.write(f"Editando: {vals[1]}")
-                with st.form("edit_cli"):
+                st.info(f"✏️ Editando a: **{vals[1]}**")
+                
+                with st.form("edit_cli_form"):
                     en = st.text_input("Nombre", value=vals[1])
                     ec = st.text_input("Cédula", value=vals[2])
                     et = st.text_input("Teléfono", value=vals[3])
                     ed = st.text_input("Dirección", value=vals[4])
-                    if st.form_submit_button("Guardar Cambios"):
+                    
+                    c_guardar, c_cancelar = st.columns(2)
+                    if c_guardar.form_submit_button("💾 Guardar Cambios"):
                         run_query("UPDATE clientes SET nombre_completo=%s, cedula=%s, telefono=%s, direccion=%s WHERE id=%s", (en, ec, et, ed, id_e), fetch=False)
                         del st.session_state.edit_id
-                        st.success("Actualizado"); st.rerun()
+                        st.success("✅ Actualizado")
+                        time.sleep(1)
+                        st.rerun()
+                        
+                    if c_cancelar.form_submit_button("❌ Cancelar"):
+                        del st.session_state.edit_id
+                        st.rerun()
 
     # ---------------- PESTAÑA COBRANZA (AGRUPADA POR CLIENTE) ----------------
     with tab_cobranza:
@@ -1085,5 +1140,4 @@ def main():
 if __name__ == "__main__":
     if check_password():
         main()
-
 
