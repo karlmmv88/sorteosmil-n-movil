@@ -43,16 +43,15 @@ def run_query(query, params=None, fetch=True):
         return None
 
 # ============================================================================
-#  1. FORMATO DE WHATSAPP (Global - Con Emoji y Soporte Extranjero)
+#  1. FORMATO DE WHATSAPP (Global - Con Emoji, Hora y Soporte Extranjero)
 # ============================================================================
-def get_whatsapp_link_exacto(telefono, boleto_num, estado, cliente_nom, sorteo_nom, fecha_sorteo, cantidad_boletos=1000):
+def get_whatsapp_link_exacto(telefono, boleto_num, estado, cliente_nom, sorteo_nom, fecha_sorteo, hora_sorteo, cantidad_boletos=1000):
     if not telefono: return ""
     
     # Limpieza básica
     tel_clean = "".join(filter(str.isdigit, str(telefono)))
     
-    # Lógica Venezuela: Si es 10 dígitos (414...) agrega 58. Si es 11 (0414...) cambia 0 por 58.
-    # Si tiene otra longitud (ej: extranjero), se deja tal cual.
+    # Lógica Venezuela
     if len(tel_clean) == 10: 
         tel_clean = "58" + tel_clean
     elif len(tel_clean) == 11 and tel_clean.startswith("0"): 
@@ -69,14 +68,13 @@ def get_whatsapp_link_exacto(telefono, boleto_num, estado, cliente_nom, sorteo_n
     
     texto_boleto = f"N° {num_str} ({est_str})"
     
-    # Mensaje con Emoji 🍀
+    # Mensaje con Emoji 🍀 y Hora
     mensaje = (
         f"Hola. Saludos, somos Sorteos Milán!!, aquí te enviamos el comprobante de tu "
         f"BOLETO: {texto_boleto}, a nombre de {cliente_nom} para el sorteo "
-        f"'{sorteo_nom}' del día {fecha_sorteo} . ¡Suerte!🍀"
+        f"'{sorteo_nom}' del día {fecha_sorteo} a las {hora_sorteo}. ¡Suerte!🍀"
     )
     
-    # Usamos api.whatsapp.com que carga mejor los emojis
     return f"https://api.whatsapp.com/send?phone={tel_clean}&text={urllib.parse.quote(mensaje)}"
 
 # ============================================================================
@@ -465,20 +463,26 @@ def main():
     
     if not nom_sorteo: return
     s_data = opciones_sorteo[nom_sorteo]
-    # Extraemos los datos crudos (fecha_raw)
-    id_sorteo, nombre_s, precio_s, fecha_raw = s_data[0], s_data[1], float(s_data[2] or 0), s_data[3]
+    # Extraemos fecha y hora crudas
+    id_sorteo, nombre_s, precio_s, fecha_raw, hora_raw = s_data[0], s_data[1], float(s_data[2] or 0), s_data[3], s_data[4]
     
-    # 🔥 CAMBIO: Formatear fecha a dd/mm/yyyy para todo el sistema
+    # 1. Formatear Fecha (dd/mm/yyyy)
     try:
-        # Si la base de datos devuelve un objeto fecha, lo formateamos
         fecha_s = fecha_raw.strftime('%d/%m/%Y')
     except:
-        # Si falla (o es texto), intentamos convertirlo o lo dejamos igual
         try:
             f_obj = datetime.strptime(str(fecha_raw), '%Y-%m-%d')
             fecha_s = f_obj.strftime('%d/%m/%Y')
         except:
             fecha_s = str(fecha_raw)
+
+    # 2. Formatear Hora (hh:mm pm)
+    try:
+        # Asumiendo que hora_raw viene como HH:MM:SS
+        h_obj = datetime.strptime(str(hora_raw), '%H:%M:%S')
+        hora_s = h_obj.strftime('%I:%M %p').lower() # Ej: 04:45 pm
+    except:
+        hora_s = str(hora_raw)
     
     # 🔥 DETECCIÓN AUTOMÁTICA DE CANTIDAD
     cantidad_boletos = 1000
@@ -685,8 +689,8 @@ def main():
                             pdf_data = generar_pdf_memoria(numero, info_pdf, config_full, cantidad_boletos)
                             col_pdf.download_button(f"📄 PDF", pdf_data, n_file, "application/pdf", use_container_width=True)
 
-                            # 3. WhatsApp (Llamada a la función global corregida)
-                            link_wa = get_whatsapp_link_exacto(c_tel, numero, estado, c_nom, nombre_s, str(fecha_s), cantidad_boletos)
+                            # 3. WhatsApp (Pasamos fecha_s y hora_s)
+                            link_wa = get_whatsapp_link_exacto(c_tel, numero, estado, c_nom, nombre_s, str(fecha_s), str(hora_s), cantidad_boletos)
                             
                             if link_wa:
                                 col_wa.link_button("📲 WhatsApp", link_wa, use_container_width=True)
@@ -898,7 +902,7 @@ def main():
                         msg_wa = (
                             f"Hola. Saludos, somos Sorteos Milán!!, aquí te enviamos {tipo_txt}: "
                             f"{txt_boletos}, a nombre de {datos_c['nombre']} para el sorteo "
-                            f"'{nombre_s}' del día {fecha_s} . ¡Suerte!🍀"
+                            f"'{nombre_s}' del día {fecha_s} a las {hora_s}. ¡Suerte!🍀"
                         )
                         
                         # Lógica Permisiva (Igual a la función global)
