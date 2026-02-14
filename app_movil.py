@@ -757,26 +757,36 @@ def main():
                             txt_nums = ", ".join([fmt_num.format(n) for n in lista_busqueda])
                             st.success(f"🟢 Disponibles: {txt_nums}")
                             with st.form("venta_multi"):
+                                st.write(f"### 📝 Asignar: {lista_fmt}")
                                 clientes = run_query("SELECT id, nombre_completo, codigo FROM clientes ORDER BY nombre_completo")
                                 opc_cli = {f"{c[1]} | {c[2] or 'S/C'}": c[0] for c in clientes} if clientes else {}
+                                
                                 nom_sel = st.selectbox("👤 Cliente:", options=list(opc_cli.keys()), index=None)
+                                st.divider()
                                 c_ab, c_pr = st.columns(2)
-                                abono_unit = c_ab.number_input("Abono c/u ($)", value=0.0)
-                                total_op = abono_unit * len(lista_busqueda)
-                                c_pr.metric("Total", f"${total_op:,.2f}")
+                                abono_unit = c_ab.number_input("Abono por Boleto ($)", value=0.0, min_value=0.0, step=1.0)
+                                total_operacion = abono_unit * len(lista_busqueda)
+                                c_pr.metric("Total a Pagar", f"${total_operacion:,.2f}")
                                 
                                 if st.form_submit_button("💾 ASIGNAR TODOS", use_container_width=True):
                                     if nom_sel:
                                         cid = opc_cli[nom_sel]
                                         est = 'pagado' if abono_unit >= precio_s else 'abonado'
                                         if abono_unit == 0: est = 'apartado'
+                                        
+                                        # 1. Guardar en Base de Datos (Bucle)
                                         for n_bol in lista_busqueda:
                                             run_query("INSERT INTO boletos (sorteo_id, numero, estado, precio, cliente_id, total_abonado, fecha_asignacion) VALUES (%s, %s, %s, %s, %s, %s, NOW())", (id_sorteo, n_bol, est, precio_s, cid, abono_unit), fetch=False)
                                         
-                                        # LOG UNIFICADO CON SEPARADOR
-                                        log_movimiento(id_sorteo, est, f"{txt_nums}||{nom_sel}", total_op)
-                                        st.success("Registrado"); time.sleep(1); st.rerun()
-                                    else: st.error("Selecciona cliente")
+                                        # 2. Guardar en Historial (UNA SOLA LÍNEA BIEN ALINEADA)
+                                        txt_nums = ", ".join([fmt_num.format(n) for n in lista_busqueda])
+                                        
+                                        # Aquí usamos el separador '||' para que el Excel detecte el nombre
+                                        # Y pasamos 'total_operacion' para que salga el monto
+                                        log_movimiento(id_sorteo, 'VENTA_MASIVA', f"{txt_nums}||{nom_sel}", total_operacion)
+                                        
+                                        st.success("✅ Registrados"); time.sleep(1); st.rerun()
+                                    else: st.error("⚠️ Selecciona un cliente.")
 
         # ============================================================
         #  MODO B: POR CLIENTE
