@@ -1268,10 +1268,14 @@ def main():
                             if len(tel_clean) == 10: tel_clean = "58" + tel_clean
                             elif len(tel_clean) == 11 and tel_clean.startswith("0"): tel_clean = "58" + tel_clean[1:]
                             
+                 # Mensaje Plural o Singular
+                            txt_concepto = "del boleto" if len(lista_nums) == 1 else "de los boletos"
+                            
                             msg = (f"Hola {nom}, saludos de Sorteos Milán. "
-                                   f"Tienes un saldo pendiente de ${d['t_deuda']:.2f} "
-                                   f"por los boletos: {str_numeros}. Agradecemos tu pago.")
-                            link = f"https://api.whatsapp.com/send?phone={tel_clean}&text={urllib.parse.quote(msg)}"
+                                   f"Te recordamos amablemente que tienes un saldo pendiente de ${d['t_deuda']:.2f} "
+                                   f"por concepto {txt_concepto}: {str_numeros}. Agradecemos tu pago. ¡Gracias!")
+                            
+                            link = f"https://wa.me/{tel_clean}?text={urllib.parse.quote(msg)}"
                             st.link_button("📲 Cobrar", link, use_container_width=True)
                         else:
                             st.warning("Sin Tel")
