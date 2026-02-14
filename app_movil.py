@@ -637,6 +637,8 @@ def main():
                     params = [id_sorteo] + lista_busqueda
                     resultados_ocupados = run_query(query, tuple(params))
                     mapa_resultados = {r[0]: r for r in resultados_ocupados} if resultados_ocupados else {}
+                    clientes = run_query("SELECT id, nombre_completo, codigo FROM clientes ORDER BY nombre_completo")
+                    opc_cli = {f"{c[1]} | {c[2] or 'S/C'}": c[0] for c in clientes} if clientes else {}
                     
                     # A. VISUALIZACIÓN
                     st.write("### 🎫 Estado Actual")
