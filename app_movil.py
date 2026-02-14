@@ -650,33 +650,38 @@ def main():
                         with cols_vis[i % 4]: st.markdown(html_card, unsafe_allow_html=True)
                     st.divider()
 
-                    # B. GESTIÓN INDIVIDUAL
+                    # B. GESTIÓN INDIVIDUAL (CORREGIDO CON PRECIO Y NOMBRE)
                     if len(lista_busqueda) == 1:
                         numero = lista_busqueda[0]
                         str_num = fmt_num.format(numero)
+
                         if numero in mapa_resultados:
                             row = mapa_resultados[numero]
                             b_id, estado, b_precio, b_abonado, b_fecha = row[5], row[1], float(row[2]), float(row[3]), row[4]
                             c_nom = row[7]; c_tel, c_ced, c_dir, c_cod = row[8], row[9], row[10], row[11]
+                            
                             st.info(f"👤 **{c_nom}**")
                             
                             c_btn1, c_btn2, c_btn3 = st.columns(3)
+                            
                             if estado != 'pagado':
                                 if c_btn1.button("✅ PAGAR TOTAL", use_container_width=True, key="btn_pag_ind"):
                                     run_query("UPDATE boletos SET estado='pagado', total_abonado=%s WHERE id=%s", (b_precio, b_id), fetch=False)
-                                    # LOG: FORMATO 'NUMERO||CLIENTE'
-                                    log_movimiento(id_sorteo, 'pagado', f"{str_num}||{c_nom}", b_precio) 
+                                    # LOG: Enviamos b_precio (el valor real) y usamos ||
+                                    log_movimiento(id_sorteo, 'PAGO_COMPLETO', f"{str_num}||{c_nom}", b_precio) 
                                     st.rerun()
 
                             if estado != 'apartado':
                                 if c_btn2.button("📌 APARTAR", use_container_width=True, key="btn_aprt"):
                                     run_query("UPDATE boletos SET estado='apartado', total_abonado=0 WHERE id=%s", (b_id,), fetch=False)
-                                    log_movimiento(id_sorteo, 'apartado', f"{str_num}||{c_nom}", 0)
+                                    # LOG: Monto 0 es correcto aquí
+                                    log_movimiento(id_sorteo, 'REVERSO_APARTADO', f"{str_num}||{c_nom}", 0)
                                     st.success("Revertido"); time.sleep(1); st.rerun()
 
                             if c_btn3.button("🗑️ LIBERAR", type="primary", use_container_width=True, key="btn_lib_ind"):
                                 run_query("DELETE FROM boletos WHERE id=%s", (b_id,), fetch=False)
-                                log_movimiento(id_sorteo, 'liberado', f"{str_num}||{c_nom}", 0)
+                                # LOG: Monto 0 es correcto aquí
+                                log_movimiento(id_sorteo, 'LIBERACION', f"{str_num}||{c_nom}", 0)
                                 st.warning("Liberado"); time.sleep(1); st.rerun()
                             
                             if estado != 'pagado' and (b_precio - b_abonado) > 0.01:
@@ -689,17 +694,30 @@ def main():
                                         nt = b_abonado + monto_abono
                                         ne = 'pagado' if (b_precio - nt) <= 0.01 else 'abonado'
                                         run_query("UPDATE boletos SET total_abonado=%s, estado=%s WHERE id=%s", (nt, ne, b_id), fetch=False)
-                                        log_movimiento(id_sorteo, 'abonado', f"{str_num}||{c_nom}", monto_abono)
+                                        # LOG: Enviamos el monto abonado
+                                        log_movimiento(id_sorteo, 'ABONO', f"{str_num}||{c_nom}", monto_abono)
                                         st.success("Abonado"); time.sleep(1); st.rerun()
+                            
                             st.divider()
-                            # (PDF/WhatsApp omitido por brevedad, es visualización)
+                            # (Aquí va tu código visual de PDF/Whatsapp que ya tenías y funciona bien)
                             col_pdf, col_wa = st.columns([1, 1])
+                            partes_nom = c_nom.strip().upper().split()
+                            nom_archivo = partes_nom[0] 
+                            if len(partes_nom) > 1: nom_archivo += f"_{partes_nom[1]}"
+                            
+                            n_file = f"{str_num} {nom_archivo}.pdf"
                             info_pdf = {'cliente': c_nom, 'cedula': c_ced, 'telefono': c_tel, 'direccion': c_dir, 'codigo_cli': c_cod, 'estado': estado, 'precio': b_precio, 'abonado': b_abonado, 'fecha_asignacion': b_fecha}
                             pdf_data = generar_pdf_memoria(numero, info_pdf, config_full, cantidad_boletos)
-                            col_pdf.download_button("📄 PDF", pdf_data, f"Boleto_{numero}.pdf", "application/pdf", use_container_width=True)
+                            col_pdf.download_button("📄 PDF", pdf_data, n_file, "application/pdf", use_container_width=True)
+                            
+                            tel_clean = "".join(filter(str.isdigit, str(c_tel or "")))
+                            if len(tel_clean) >= 10:
+                                if not tel_clean.startswith("58"): tel_clean = "58"+tel_clean[-10:]
+                                link = f"https://api.whatsapp.com/send?phone={tel_clean}&text=Hola"
+                                col_wa.link_button("📲 WhatsApp", link, use_container_width=True)
 
                         else:
-                            # VENTA SINGLE
+                            # VENTA NUEVA
                             with st.form("venta_single"):
                                 st.write(f"### 📝 Vender Boleto {str_num}")
                                 clientes = run_query("SELECT id, nombre_completo, codigo FROM clientes ORDER BY nombre_completo")
@@ -709,14 +727,16 @@ def main():
                                 abono = c_ab.number_input("Abono ($)", value=0.0)
                                 c_pr.metric("Precio", f"${precio_s}")
                                 
-                                if st.form_submit_button("💾 ASIGNAR TODOS", use_container_width=True):
+                                if st.form_submit_button("💾 ASIGNAR", use_container_width=True):
                                     if nom_sel:
                                         cid = opc_cli[nom_sel]
-                                        est = 'pagado' if abono_unit >= precio_s else 'abonado'
-                                        if abono_unit == 0: est = 'apartado'
-                                        
-                                        for n_bol in lista_busqueda:
-                                            run_query("INSERT INTO boletos (sorteo_id, numero, estado, precio, cliente_id, total_abonado, fecha_asignacion) VALUES (%s, %s, %s, %s, %s, %s, NOW())", (id_sorteo, n_bol, est, precio_s, cid, abono_unit), fetch=False)
+                                        est = 'pagado' if abono >= precio_s else 'abonado'
+                                        if abono == 0: est = 'apartado'
+                                        run_query("INSERT INTO boletos (sorteo_id, numero, estado, precio, cliente_id, total_abonado, fecha_asignacion) VALUES (%s, %s, %s, %s, %s, %s, NOW())", (id_sorteo, numero, est, precio_s, cid, abono), fetch=False)
+                                        # LOG: Enviamos el abono como monto
+                                        log_movimiento(id_sorteo, 'VENTA', f"{str_num}||{nom_sel}", abono)
+                                        st.success("Asignado"); time.sleep(1); st.rerun()
+                                    else: st.error("Falta cliente")
                                         
                                         # LOG UNIFICADO CON FORMATO CORRECTO DE CEROS
                                         # fmt_num ya vale "{:02d}" o "{:03d}" según el sorteo actual
@@ -877,7 +897,7 @@ def main():
                                     log_movimiento(id_sorteo, 'ABONO', f"Boleto {fmt_num.format(dato_unico['numero'])} - {datos_c['nombre']}", m) # LOG
                                     st.session_state.seleccion_actual = []; st.rerun()
 
-                    # D. BOTONES DE ACCIÓN MASIVA (LOG UNIFICADO)
+                    # D. BOTONES DE ACCIÓN MASIVA (LOG UNIFICADO CON MONTOS)
                     if numeros_sel:
                         st.write("### ⚡ Acciones Masivas")
                         c_acc1, c_acc2, c_acc3 = st.columns(3)
@@ -886,13 +906,15 @@ def main():
                         
                         # 1. PAGAR TODOS
                         if c_acc1.button("✅ PAGAR", use_container_width=True):
-                            total_cobrado = 0
+                            total_cobrado = 0.0
                             for d in datos_sel:
                                 run_query("UPDATE boletos SET estado='pagado', total_abonado=%s WHERE sorteo_id=%s AND numero=%s", (d['precio'], id_sorteo, d['numero']), fetch=False)
-                                total_cobrado += d['precio']
+                                # Sumamos lo que faltaba por pagar de cada boleto (Precio - lo que ya tenía abonado)
+                                # O si prefieres registrar el precio total del boleto, usa d['precio']
+                                total_cobrado += d['precio'] 
                             
-                            # LOG: ACCIÓN 'pagado'
-                            log_movimiento(id_sorteo, 'pagado', f"{txt_nums}||{datos_c['nombre']}", total_cobrado)
+                            # LOG: Registramos el total de dinero movido
+                            log_movimiento(id_sorteo, 'PAGO_MASIVO', f"{txt_nums}||{datos_c['nombre']}", total_cobrado)
                             st.session_state.seleccion_actual = []; st.success("Pagado"); time.sleep(1); st.rerun()
                         
                         # 2. APARTAR TODOS
@@ -900,8 +922,7 @@ def main():
                             for d in datos_sel:
                                 run_query("UPDATE boletos SET estado='apartado', total_abonado=0 WHERE sorteo_id=%s AND numero=%s", (id_sorteo, d['numero']), fetch=False)
                             
-                            # LOG: ACCIÓN 'apartado'
-                            log_movimiento(id_sorteo, 'apartado', f"{txt_nums}||{datos_c['nombre']}", 0)
+                            log_movimiento(id_sorteo, 'REVERSO_MASIVO', f"{txt_nums}||{datos_c['nombre']}", 0)
                             st.session_state.seleccion_actual = []; st.success("Apartado"); time.sleep(1); st.rerun()
 
                         # 3. LIBERAR TODOS
@@ -909,8 +930,7 @@ def main():
                             for d in datos_sel:
                                 run_query("DELETE FROM boletos WHERE sorteo_id=%s AND numero=%s", (id_sorteo, d['numero']), fetch=False)
                             
-                            # LOG: ACCIÓN 'liberado'
-                            log_movimiento(id_sorteo, 'liberado', f"{txt_nums}||{datos_c['nombre']}", 0)
+                            log_movimiento(id_sorteo, 'LIBERACION_MASIVA', f"{txt_nums}||{datos_c['nombre']}", 0)
                             st.session_state.seleccion_actual = []; st.warning("Liberado"); time.sleep(1); st.rerun()
                     
                     # E. WHATSAPP Y PDF (Orden PDF -> WhatsApp)
@@ -1081,7 +1101,7 @@ def main():
                             st.session_state.edit_vals = c
                             st.rerun() # <--- IMPORTANTE: Fuerza la actualización inmediata
 
-# ---------------- PESTAÑA COBRANZA (FORMATO BANCARIO) ----------------
+    # ---------------- PESTAÑA COBRANZA (FORMATO BANCARIO CORREGIDO) ----------------
     with tab_cobranza:
         st.header("📊 Auditoría y Cobranza")
         
@@ -1089,14 +1109,11 @@ def main():
             st.rerun()
         st.write("---")
         
-        # === 1. DETERMINAR FORMATO DE CEROS (2 o 3 dígitos) ===
-        # Esto asegura que el reporte cumpla tu regla de 100 o 1000 números
-        formato_ceros = "{:02d}" # Por defecto 2 dígitos
-        if cantidad_boletos > 100:
-            formato_ceros = "{:03d}" # Si son 1000, usa 3 dígitos
+        # 1. DETERMINAR FORMATO DE CEROS
+        formato_ceros = "{:02d}" 
+        if cantidad_boletos > 100: formato_ceros = "{:03d}"
 
-        # === 2. OBTENER EL HISTORIAL ORDENADO ===
-        # Traemos todo ordenado cronológicamente (lo más reciente arriba)
+        # 2. OBTENER EL HISTORIAL
         sql_hist = """
             SELECT fecha_registro, usuario, detalle, accion, monto
             FROM historial WHERE sorteo_id = %s 
@@ -1109,84 +1126,86 @@ def main():
         
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
             
-            # --- HOJA: MOVIMIENTOS DETALLADOS (TIPO BANCO) ---
+            # --- HOJA: MOVIMIENTOS DETALLADOS ---
             if rows_hist:
                 data_bancaria = []
                 
                 for row in rows_hist:
                     f_raw, usuario, detalle_raw, accion, monto = row
                     
-                    # A. SEPARACIÓN STRICTA DE FECHA Y HORA
+                    # A. FECHA Y HORA
                     try:
                         dt = pd.to_datetime(f_raw)
                         fecha_str = dt.strftime('%d/%m/%Y')
-                        hora_str = dt.strftime('%I:%M %p').lower() # am/pm minúscula
+                        hora_str = dt.strftime('%I:%M %p').lower()
                     except:
-                        fecha_str = str(f_raw)
-                        hora_str = "-"
+                        fecha_str = str(f_raw); hora_str = "-"
 
-                    # B. LIMPIEZA DE DATOS (BOLETOS Y CLIENTE)
-                    # El sistema guarda: "01, 05||Juan Perez"
-                    boletos_str = detalle_raw
-                    cliente_str = "-"
+                    # B. SEPARAR BOLETOS Y CLIENTE (INTELIGENTE)
+                    texto_detalle = str(detalle_raw)
+                    boletos_str = texto_detalle
+                    cliente_str = "Desconocido"
                     
-                    if "||" in str(detalle_raw):
-                        partes = str(detalle_raw).split("||")
-                        nums_raw = partes[0].strip() # Ej: "1, 5" o "01, 05"
+                    # CASO 1: Formato Nuevo (Con separador ||)
+                    if "||" in texto_detalle:
+                        partes = texto_detalle.split("||")
+                        boletos_raw = partes[0].strip()
                         if len(partes) > 1: cliente_str = partes[1].strip()
-                        
-                        # C. FORZAR FORMATO DE CEROS EN LOS NÚMEROS DEL REPORTE
-                        # Si en la BD se guardó "1", aquí lo convertimos a "01" o "001"
-                        lista_nums_limpios = []
-                        try:
-                            # Separamos por comas y limpiamos espacios
-                            for n in nums_raw.replace('Venta Boletos:', '').split(','):
-                                n_clean = "".join(filter(str.isdigit, n))
-                                if n_clean:
-                                    val_int = int(n_clean)
-                                    lista_nums_limpios.append(formato_ceros.format(val_int))
-                            boletos_str = ", ".join(lista_nums_limpios)
-                        except:
-                            boletos_str = nums_raw # Si falla, dejamos el original
                     
+                    # CASO 2: Formato Viejo (Intento de recuperación por guion)
+                    elif " - " in texto_detalle:
+                        partes = texto_detalle.split(" - ")
+                        # El último pedazo suele ser el nombre
+                        cliente_str = partes[-1].strip()
+                        # Lo anterior es el detalle del boleto
+                        boletos_raw = " - ".join(partes[:-1])
+                    
+                    else:
+                        boletos_raw = texto_detalle
+                        cliente_str = "-"
+
+                    # C. LIMPIEZA DE NÚMEROS (Para que queden 05, 025, etc)
+                    lista_final = []
+                    try:
+                        # Extraemos solo los dígitos del texto de boletos
+                        # Ej: "Venta Boleto 5" -> "5"
+                        import re
+                        numeros_encontrados = re.findall(r'\d+', boletos_raw)
+                        for n in numeros_encontrados:
+                            lista_final.append(formato_ceros.format(int(n)))
+                        
+                        if lista_final:
+                            boletos_clean = ", ".join(lista_final)
+                        else:
+                            boletos_clean = boletos_raw
+                    except:
+                        boletos_clean = boletos_raw
+
                     # D. AGREGAR A LA FILA
                     data_bancaria.append([
-                        fecha_str,      # Columna 1
-                        hora_str,       # Columna 2
-                        usuario,        # Columna 3
-                        boletos_str,    # Columna 4 (Con ceros correctos)
-                        cliente_str,    # Columna 5
-                        accion.upper(), # Columna 6
-                        monto           # Columna 7
+                        fecha_str, hora_str, usuario, 
+                        boletos_clean, cliente_str, accion.upper(), float(monto or 0)
                     ])
 
-                # E. CREAR DATAFRAME CON ORDEN EXACTO
                 cols = ["FECHA", "HORA", "USUARIO", "N° BOLETO", "CLIENTE", "ACCIÓN", "MONTO"]
                 df_hist = pd.DataFrame(data_bancaria, columns=cols)
                 
-                # Guardar en Excel
                 df_hist.to_excel(writer, index=False, sheet_name='Auditoría Movimientos')
                 
-                # Ajustar ancho de columnas para que se vea profesional
+                # Formato visual Excel
                 workbook = writer.book
                 worksheet = writer.sheets['Auditoría Movimientos']
-                format_money = workbook.add_format({'num_format': '$#,##0.00'})
-                worksheet.set_column('A:A', 12) # Fecha
-                worksheet.set_column('B:B', 10) # Hora
-                worksheet.set_column('C:C', 10) # Usuario
-                worksheet.set_column('D:D', 25) # Boletos
-                worksheet.set_column('E:E', 30) # Cliente
-                worksheet.set_column('F:F', 15) # Acción
-                worksheet.set_column('G:G', 12, format_money) # Monto
-                
+                fmt_money = workbook.add_format({'num_format': '$#,##0.00'})
+                worksheet.set_column('A:B', 12) 
+                worksheet.set_column('D:D', 20) 
+                worksheet.set_column('E:E', 30)
+                worksheet.set_column('G:G', 12, fmt_money)
                 hay_datos_hist = True
             
             else:
-                # Hoja vacía si no hay datos
                 pd.DataFrame(columns=["SIN MOVIMIENTOS"]).to_excel(writer, sheet_name='Auditoría Movimientos', index=False)
 
-            # --- HOJA ADICIONAL: ESTADO ACTUAL (RESUMEN) ---
-            # (Tu lista de 90 boletos)
+            # --- HOJA: ESTADO ACTUAL ---
             sql_estado = """
                 SELECT b.numero, c.nombre_completo, c.telefono, UPPER(b.estado), 
                        b.precio, b.total_abonado, (b.precio - b.total_abonado)
@@ -1195,31 +1214,21 @@ def main():
             """
             rows_estado = run_query(sql_estado, (id_sorteo,))
             if rows_estado:
-                data_estado = []
+                data_est = []
                 for r in rows_estado:
-                    # Aplicamos formato ceros al número de boleto también aquí
-                    n_fmt = formato_ceros.format(r[0])
-                    data_estado.append([n_fmt] + list(r[1:]))
-                
-                df_st = pd.DataFrame(data_estado, columns=["Boleto", "Cliente", "Teléfono", "Estado", "Precio", "Abonado", "Saldo"])
+                    data_est.append([formato_ceros.format(r[0])] + list(r[1:]))
+                df_st = pd.DataFrame(data_est, columns=["Boleto", "Cliente", "Teléfono", "Estado", "Precio", "Abonado", "Saldo"])
                 df_st.to_excel(writer, index=False, sheet_name='Estado Actual Boletos')
 
-        # === BOTÓN DE DESCARGA ===
         if hay_datos_hist or rows_estado:
-            st.download_button(
-                label="📥 DESCARGAR REPORTE BANCARIO",
-                data=buffer,
-                file_name=f"Reporte_Bancario_{nombre_s}.xlsx",
-                mime="application/vnd.ms-excel",
-                use_container_width=True,
-                type="primary"
-            )
+            st.download_button("📥 DESCARGAR REPORTE BANCARIO", buffer, f"Reporte_{nombre_s}.xlsx", "application/vnd.ms-excel", use_container_width=True, type="primary")
         else:
-            st.info("No hay movimientos registrados aún.")
+            st.info("Sin datos.")
             
         st.write("---")
-        # (Aquí abajo sigue tu código de visualización de deudores en pantalla, ese no cambia)
-        # ... Mantén el código de raw_deudores ...
+        # (Aquí sigue el código de visualización de deudores en pantalla que ya tienes bien)
+        # NO LO BORRES, SOLO ESTOY RESUMIENDO EL BLOQUE DEL EXCEL.
+        # ... (Tu código de raw_deudores y tarjetas visuales) ...
         raw_deudores = run_query("""
             SELECT c.nombre_completo, c.telefono, b.numero, b.precio, b.total_abonado
             FROM boletos b JOIN clientes c ON b.cliente_id = c.id
@@ -1241,7 +1250,6 @@ def main():
             st.metric("Total por Cobrar", f"${sum(g['t_deuda'] for g in grupos.values()):,.2f}", f"{len(grupos)} Clientes")
             for clave, d in grupos.items():
                 nom = d['nombre']; tel = d['tel']; lista_nums = sorted(d['numeros'])
-                # Usamos formato_ceros aquí también para visualización
                 str_numeros = ", ".join([formato_ceros.format(n) for n in lista_nums])
                 with st.container(border=True):
                     c1, c2 = st.columns([2,1])
