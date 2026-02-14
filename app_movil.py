@@ -1179,11 +1179,43 @@ def main():
                             st.link_button("📲 Cobrar", link, use_container_width=True)
                         else:
                             st.warning("Sin Tel")
+# ============================================================================
+#  CONTROL DE INACTIVIDAD (5 MINUTOS)
+# ============================================================================
+def verificar_inactividad():
+    # Tiempo límite en segundos (5 minutos * 60 segundos = 300)
+    TIMEOUT_SEGUNDOS = 300 
+    
+    # Obtenemos la hora actual
+    now = time.time()
+    
+    # Si ya existe un registro de última actividad
+    if 'ultima_actividad' in st.session_state:
+        tiempo_transcurrido = now - st.session_state['ultima_actividad']
+        
+        # Si pasó más tiempo del permitido
+        if tiempo_transcurrido > TIMEOUT_SEGUNDOS:
+            st.warning("⚠️ Sesión cerrada por inactividad (5 min).")
+            # Borramos la autenticación
+            st.session_state["password_correct"] = False
+            # Borramos el registro de tiempo
+            del st.session_state['ultima_actividad']
+            time.sleep(2) # Damos tiempo para leer el mensaje
+            st.rerun() # Recargamos la página para ir al Login
+            return False
+
+    # Si hay movimiento, actualizamos la hora a "ahora mismo"
+    st.session_state['ultima_actividad'] = now
+    return True
 
 # ============================================================================
-#  PUNTO DE ENTRADA (CON LOGIN)
+#  PUNTO DE ENTRADA (CON LOGIN Y TIMEOUT)
 # ============================================================================
 if __name__ == "__main__":
+    # 1. Verificamos contraseña primero
     if check_password():
-        main()
+        # 2. Si la contraseña es correcta, verificamos inactividad
+        if verificar_inactividad():
+            # 3. Si está activo, corremos la app
+            main()
 
