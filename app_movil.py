@@ -759,7 +759,11 @@ def main():
                             with st.form("venta_multi"):
                                 st.write(f"### 📝 Asignar: {lista_fmt}")
                                 clientes = run_query("SELECT id, nombre_completo, codigo FROM clientes ORDER BY nombre_completo")
-                                opc_cli = {f"{c[1]} | {c[2] or 'S/C'}": c[0] for c in clientes} if clientes else {}
+                                opc_cli = {} 
+                                if clientes:
+                                    for c in clientes:
+                                        cod_d = c[2] if c[2] else "S/C"
+                                        opc_cli[f"{c[1]} | {cod_d}"] = c[0]
                                 
                                 nom_sel = st.selectbox("👤 Cliente:", options=list(opc_cli.keys()), index=None)
                                 st.divider()
@@ -774,18 +778,18 @@ def main():
                                         est = 'pagado' if abono_unit >= precio_s else 'abonado'
                                         if abono_unit == 0: est = 'apartado'
                                         
-                                        # 1. Guardar en Base de Datos (Bucle)
+                                        # 1. Guardar en BD (Uno por uno para que cada boleto tenga dueño)
                                         for n_bol in lista_busqueda:
                                             run_query("INSERT INTO boletos (sorteo_id, numero, estado, precio, cliente_id, total_abonado, fecha_asignacion) VALUES (%s, %s, %s, %s, %s, %s, NOW())", (id_sorteo, n_bol, est, precio_s, cid, abono_unit), fetch=False)
                                         
-                                        # 2. Guardar en Historial (UNA SOLA LÍNEA BIEN ALINEADA)
+                                        # 2. Guardar en HISTORIAL (Una sola línea resumen tipo Banco)
+                                        # Convertimos lista de números a texto: "01, 05, 10"
                                         txt_nums = ", ".join([fmt_num.format(n) for n in lista_busqueda])
                                         
-                                        # Aquí usamos el separador '||' para que el Excel detecte el nombre
-                                        # Y pasamos 'total_operacion' para que salga el monto
+                                        # Enviamos con separador || y el monto TOTAL de la operación
                                         log_movimiento(id_sorteo, 'VENTA_MASIVA', f"{txt_nums}||{nom_sel}", total_operacion)
                                         
-                                        st.success("✅ Registrados"); time.sleep(1); st.rerun()
+                                        st.success("✅ Venta Masiva Registrada"); time.sleep(1); st.rerun()
                                     else: st.error("⚠️ Selecciona un cliente.")
 
         # ============================================================
@@ -907,42 +911,45 @@ def main():
                                     log_movimiento(id_sorteo, 'ABONO', f"Boleto {fmt_num.format(dato_unico['numero'])} - {datos_c['nombre']}", m) # LOG
                                     st.session_state.seleccion_actual = []; st.rerun()
 
-                    # D. BOTONES DE ACCIÓN MASIVA (LÓGICA BANCARIA)
+# D. BOTONES DE ACCIÓN (LÓGICA BANCARIA UNIFICADA)
                     if numeros_sel:
                         st.write("### ⚡ Acciones Masivas")
                         c_acc1, c_acc2, c_acc3 = st.columns(3)
                         
-                        # Preparamos el texto: "01, 05, 10"
+                        # Agrupamos números: "01, 05, 10"
                         txt_nums = ", ".join([fmt_num.format(d['numero']) for d in datos_sel])
                         
                         # 1. PAGAR TODOS
-                        if c_acc1.button("✅ PAGAR SELECCIÓN", use_container_width=True):
+                        if c_acc1.button("✅ PAGADO", use_container_width=True):
                             total_cobrado = 0.0
                             for d in datos_sel:
                                 run_query("UPDATE boletos SET estado='pagado', total_abonado=%s WHERE sorteo_id=%s AND numero=%s", (d['precio'], id_sorteo, d['numero']), fetch=False)
+                                # Sumamos el precio total al monto de la operación
                                 total_cobrado += d['precio']
                             
-                            # GUARDAMOS CON || PARA QUE EL REPORTE SAQUE EL NOMBRE
+                            # LOG: Usamos '||' y enviamos el monto total
                             log_movimiento(id_sorteo, 'PAGO_MASIVO', f"{txt_nums}||{datos_c['nombre']}", total_cobrado)
                             
                             st.session_state.seleccion_actual = []
                             st.success(f"✅ Pagado: {txt_nums}"); time.sleep(1); st.rerun()
                         
                         # 2. APARTAR TODOS
-                        if c_acc2.button("📌 APARTAR SELECCIÓN", use_container_width=True):
+                        if c_acc2.button("📌 APARTADO", use_container_width=True):
                             for d in datos_sel:
                                 run_query("UPDATE boletos SET estado='apartado', total_abonado=0 WHERE sorteo_id=%s AND numero=%s", (id_sorteo, d['numero']), fetch=False)
                             
+                            # LOG: Monto 0
                             log_movimiento(id_sorteo, 'REVERSO_MASIVO', f"{txt_nums}||{datos_c['nombre']}", 0)
                             
                             st.session_state.seleccion_actual = []
                             st.success(f"📌 Apartado: {txt_nums}"); time.sleep(1); st.rerun()
 
                         # 3. LIBERAR TODOS
-                        if c_acc3.button("🗑️ LIBERAR SELECCIÓN", type="primary", use_container_width=True):
+                        if c_acc3.button("🗑 LIBERAR", type="primary", use_container_width=True):
                             for d in datos_sel:
                                 run_query("DELETE FROM boletos WHERE sorteo_id=%s AND numero=%s", (id_sorteo, d['numero']), fetch=False)
                             
+                            # LOG: Monto 0
                             log_movimiento(id_sorteo, 'LIBERACION_MASIVA', f"{txt_nums}||{datos_c['nombre']}", 0)
                             
                             st.session_state.seleccion_actual = []
