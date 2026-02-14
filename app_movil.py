@@ -48,13 +48,17 @@ def run_query(query, params=None, fetch=True):
 # ============================================================================
 #  HELPER: REGISTRO DE HISTORIAL
 # ============================================================================
-def log_movimiento(sorteo_id, accion, detalle, monto):
-    # CAMBIA 'fecha_registro' POR EL NOMBRE QUE TENGAS EN TU BASE DE DATOS (ej: 'fecha')
-    sql = """
-        INSERT INTO historial (sorteo_id, usuario, accion, detalle, monto, fecha_registro)
-        VALUES (%s, 'MOVIL', %s, %s, %s, NOW())
-    """
-    run_query(sql, (sorteo_id, accion, detalle, monto), fetch=False)
+def log_movimiento(sorteo_id, tipo, detalle, monto):
+    # Esta función guarda en la tabla 'movimientos' que acabas de crear en Supabase
+    try:
+        # Usamos NOW() para que la base de datos ponga la fecha y hora exacta
+        run_query("""
+            INSERT INTO movimientos (sorteo_id, tipo, detalle, monto, fecha)
+            VALUES (%s, %s, %s, %s, NOW())
+        """, (sorteo_id, tipo, detalle, monto), fetch=False)
+    except Exception as e:
+        print(f"Error guardando log: {e}") 
+        # No mostramos error en pantalla para no interrumpir la venta, pero lo imprimimos en consola
     
 # ============================================================================
 #  CONTROL DE INACTIVIDAD (5 MINUTOS)
@@ -742,40 +746,41 @@ def main():
                     elif len(lista_busqueda) > 1:
                         st.info(f"Seleccionados: {len(lista_busqueda)} boletos")
                         
-                        # 1. Mostrar lista de números
+                        # Mostramos los números
                         txt_display = ", ".join([str(n) for n in lista_busqueda])
                         st.write(f"Números: {txt_display}")
 
-                        # 2. Calcular total
+                        # Calculamos total
                         total_operacion = len(lista_busqueda) * precio_s
                         st.metric("Total a Pagar", f"${total_operacion:,.0f}")
 
-                        # 3. Selección de Cliente
+                        # Selector de Cliente
                         nom_sel = st.selectbox("Cliente", options=[""] + list(opc_cli.keys()), key="sel_cli_masiva")
 
-                        # 4. Botón de Acción
+                        # BOTÓN DE REGISTRAR
                         if st.button("💾 REGISTRAR VENTA MASIVA", use_container_width=True):
                             if nom_sel:
                                 cid = opc_cli[nom_sel]
                                 
-                                # A. Insertar cada boleto en la base de datos
+                                # 1. Registrar boletos en la tabla 'boletos' (Ocupación)
                                 for n in lista_busqueda:
                                     run_query("""
                                         INSERT INTO boletos (sorteo_id, numero, estado, precio, cliente_id, total_abonado, fecha_asignacion) 
                                         VALUES (%s, %s, 'pagado', %s, %s, %s, NOW())
                                     """, (id_sorteo, n, precio_s, cid, precio_s), fetch=False)
                                 
-                                # B. PREPARAR DATOS PARA EL REPORTE (Esto es lo que faltaba)
-                                # Formateamos los números con ceros (ej: 04, 05)
+                                # 2. Registrar en el REPORTE (Tabla 'movimientos')
+                                # Formateamos números con ceros (ej: 004, 025)
                                 fmt = "{:02d}" if cant_boletos < 1000 else "{:03d}"
                                 txt_nums_reporte = ", ".join([fmt.format(n) for n in lista_busqueda])
                                 
-                                # C. GUARDAR EN EL LOG (AUDITORÍA)
-                                # El formato "NUMEROS||CLIENTE" es vital para que el Excel separe las columnas
+                                # IMPORTANTE: Aquí creamos el texto que lee el Excel (Numeros || Cliente)
                                 detalle_log = f"{txt_nums_reporte}||{nom_sel}"
+                                
+                                # Guardamos usando la función que corregimos arriba
                                 log_movimiento(id_sorteo, 'VENTA_MASIVA', detalle_log, total_operacion)
 
-                                st.success("¡Venta Registrada!")
+                                st.success("¡Venta Registrada y Reporte Actualizado!")
                                 time.sleep(1.5)
                                 st.rerun()
                             else:
