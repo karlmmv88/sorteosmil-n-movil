@@ -737,16 +737,6 @@ def main():
                                         log_movimiento(id_sorteo, 'VENTA', f"{str_num}||{nom_sel}", abono)
                                         st.success("Asignado"); time.sleep(1); st.rerun()
                                     else: st.error("Falta cliente")
-                                        
-                                        # LOG UNIFICADO CON FORMATO CORRECTO DE CEROS
-                                        # fmt_num ya vale "{:02d}" o "{:03d}" según el sorteo actual
-                                        txt_nums = ", ".join([fmt_num.format(n) for n in lista_busqueda])
-                                        
-                                        # Guardamos con el separador || para que el Excel lo entienda
-                                        log_movimiento(id_sorteo, 'VENTA_MASIVA', f"{txt_nums}||{nom_sel}", total_operacion)
-                                        
-                                        st.success("Registrado"); time.sleep(1); st.rerun()
-                                    else: st.error("Selecciona cliente")
 
                     # C. VENTA MÚLTIPLE (UNIFICADO)
                     elif len(lista_busqueda) > 1:
@@ -909,7 +899,7 @@ def main():
                                     log_movimiento(id_sorteo, 'ABONO', f"Boleto {fmt_num.format(dato_unico['numero'])} - {datos_c['nombre']}", m) # LOG
                                     st.session_state.seleccion_actual = []; st.rerun()
 
-# D. BOTONES DE ACCIÓN (LÓGICA BANCARIA UNIFICADA)
+                    # D. BOTONES DE ACCIÓN (LÓGICA BANCARIA UNIFICADA)
                     if numeros_sel:
                         st.write("### ⚡ Acciones Masivas")
                         c_acc1, c_acc2, c_acc3 = st.columns(3)
