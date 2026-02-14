@@ -671,7 +671,7 @@ def main():
                             c_btn1, c_btn2, c_btn3 = st.columns(3)
                             
                             if estado != 'pagado':
-                                if c_btn1.button("✅ PAGAR TOTAL", use_container_width=True, key="btn_pag_ind"):
+                                if c_btn1.button("✅ PAGADO", use_container_width=True, key="btn_pag_ind"):
                                     run_query("UPDATE boletos SET estado='pagado', total_abonado=%s WHERE id=%s", (b_precio, b_id), fetch=False)
                                     # LOG: Enviamos b_precio (el valor real) y usamos ||
                                     log_movimiento(id_sorteo, 'PAGO_COMPLETO', f"{str_num}||{c_nom}", b_precio) 
@@ -744,50 +744,61 @@ def main():
                                         st.success("Asignado"); time.sleep(1); st.rerun()
                                     else: st.error("Falta cliente")
 
-                    # C. VENTA MÚLTIPLE (MAS DE 1 BOLETO)
+                    # C. VENTA MÚLTIPLE (VISUALMENTE IGUAL A UN BOLETO)
                     elif len(lista_busqueda) > 1:
-                        st.info(f"Seleccionados: {len(lista_busqueda)} boletos")
-                        
-                        # Mostramos los números
-                        txt_display = ", ".join([str(n) for n in lista_busqueda])
-                        st.write(f"Números: {txt_display}")
-
-                        # Calculamos total
+                        # 1. Preparar datos
                         total_operacion = len(lista_busqueda) * precio_s
-                        st.metric("Total a Pagar", f"${total_operacion:,.0f}")
+                        txt_display = ", ".join([str(n) for n in lista_busqueda])
 
-                        # Selector de Cliente
-                        nom_sel = st.selectbox("Cliente", options=[""] + list(opc_cli.keys()), key="sel_cli_masiva")
+                        # 2. USAR 'st.form' PARA QUE SE VEA EL CUADRO IGUAL AL INDIVIDUAL
+                        with st.form("venta_masiva_form"):
+                            st.write(f"### 📝 Venta Masiva ({len(lista_busqueda)})")
+                            st.caption(f"Boletos: {txt_display}")
 
-                        # BOTÓN DE REGISTRAR
-                        if st.button("💾 ASIGNAR", use_container_width=True):
-                            if nom_sel:
-                                cid = opc_cli[nom_sel]
-                                
-                                # 1. Registrar boletos en la tabla 'boletos' (Ocupación)
-                                for n in lista_busqueda:
-                                    run_query("""
-                                        INSERT INTO boletos (sorteo_id, numero, estado, precio, cliente_id, total_abonado, fecha_asignacion) 
-                                        VALUES (%s, %s, 'pagado', %s, %s, %s, NOW())
-                                    """, (id_sorteo, n, precio_s, cid, precio_s), fetch=False)
-                                
-                                # 2. Registrar en el REPORTE (Tabla 'movimientos')
-                                # Formateamos números con ceros (ej: 004, 025)
-                                fmt = "{:02d}" if cantidad_boletos < 1000 else "{:03d}"
-                                txt_nums_reporte = ", ".join([fmt.format(n) for n in lista_busqueda])
-                                
-                                # IMPORTANTE: Aquí creamos el texto que lee el Excel (Numeros || Cliente)
-                                detalle_log = f"{txt_nums_reporte}||{nom_sel}"
-                                
-                                # Guardamos usando la función que corregimos arriba
-                                log_movimiento(id_sorteo, 'VENTA_MASIVA', detalle_log, total_operacion)
+                            # Selector idéntico
+                            nom_sel = st.selectbox("👤 Cliente:", options=list(opc_cli.keys()), index=None)
+                            
+                            # Columnas idénticas (Abono vs Total)
+                            c_ab, c_pr = st.columns(2)
+                            abono_total = c_ab.number_input("Abono Total ($)", value=0.0, step=1.0)
+                            c_pr.metric("Total a Pagar", f"${total_operacion:,.0f}")
 
-                                st.success("¡Venta Registrada y Reporte Actualizado!")
-                                time.sleep(1.5)
-                                st.rerun()
-                            else:
-                                st.error("⚠️ Debes seleccionar un cliente")
+                            # Botón de acción dentro del form
+                            if st.form_submit_button("💾 ASIGNAR", use_container_width=True):
+                                if nom_sel:
+                                    cid = opc_cli[nom_sel]
+                                    
+                                    # Lógica: Dividimos el abono entre la cantidad de boletos
+                                    abono_unitario = abono_total / len(lista_busqueda)
+                                    
+                                    # Determinar estado automáticamente (Igual que individual)
+                                    if abono_unitario >= precio_s:
+                                        estado_final = 'pagado'
+                                    elif abono_unitario == 0:
+                                        estado_final = 'apartado'
+                                    else:
+                                        estado_final = 'abonado'
 
+                                    # Guardar cada boleto
+                                    for n in lista_busqueda:
+                                        run_query("""
+                                            INSERT INTO boletos (sorteo_id, numero, estado, precio, cliente_id, total_abonado, fecha_asignacion) 
+                                            VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                                        """, (id_sorteo, n, estado_final, precio_s, cid, abono_unitario), fetch=False)
+                                    
+                                    # Log y reporte
+                                    fmt = "{:02d}" if cantidad_boletos < 1000 else "{:03d}"
+                                    txt_nums_reporte = ", ".join([fmt.format(n) for n in lista_busqueda])
+                                    detalle_log = f"{txt_nums_reporte}||{nom_sel}"
+                                    
+                                    log_movimiento(id_sorteo, 'VENTA_MASIVA', detalle_log, abono_total)
+
+                                    st.success("¡Venta Masiva Registrada!")
+                                    time.sleep(1.5)
+                                    st.rerun()
+                                else:
+                                    st.error("⚠️ Debes seleccionar un cliente")
+                                
         # ============================================================
         #  MODO B: POR CLIENTE
         # ============================================================
