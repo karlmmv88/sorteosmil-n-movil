@@ -672,9 +672,9 @@ def main():
                             st.divider()
 
                             # --- SECCIÓN PDF Y WHATSAPP ---
-                            col_wa, col_pdf = st.columns([1, 1])
+                            col_pdf, col_wa = st.columns([1, 1])
                             
-                            # 1. Lógica de Nombre (Sin guiones, con espacios)
+                            # 1. Lógica de Nombre
                             partes_nom = c_nom.strip().upper().split()
                             if len(partes_nom) >= 3:
                                 nom_archivo = f"{partes_nom[0]}_{partes_nom[2]}"
@@ -685,18 +685,21 @@ def main():
                             
                             n_file = f"{str_num} {nom_archivo} ({estado.upper()}).pdf"
 
-                            # 2. PDF
+                            # 2. PDF (COLUMNA IZQUIERDA)
                             info_pdf = {'cliente': c_nom, 'cedula': c_ced, 'telefono': c_tel, 'direccion': c_dir, 'codigo_cli': c_cod, 'estado': estado, 'precio': b_precio, 'abonado': b_abonado, 'fecha_asignacion': b_fecha}
                             pdf_data = generar_pdf_memoria(numero, info_pdf, config_full, cantidad_boletos)
-                            col_pdf.download_button(f"📄 PDF", pdf_data, n_file, "application/pdf", use_container_width=True)
+                            
+                            with col_pdf:
+                                st.download_button(f"📄 PDF", pdf_data, n_file, "application/pdf", use_container_width=True)
 
-                            # 3. WhatsApp (Pasamos fecha_s y hora_s)
+                            # 3. WhatsApp (COLUMNA DERECHA)
                             link_wa = get_whatsapp_link_exacto(c_tel, numero, estado, c_nom, nombre_s, str(fecha_s), str(hora_s), cantidad_boletos)
                             
-                            if link_wa:
-                                col_wa.link_button("📲 WhatsApp", link_wa, use_container_width=True)
-                            else:
-                                col_wa.warning("Sin teléfono")
+                            with col_wa:
+                                if link_wa:
+                                    st.link_button("📲 WhatsApp", link_wa, use_container_width=True)
+                                else:
+                                    st.warning("Sin teléfono")
 
                         else:
                             # BOLETO DISPONIBLE
@@ -891,13 +894,23 @@ def main():
                     
                     st.divider()
                     
-                    # E. WHATSAPP Y PDF
-                    col_wa, col_pdf = st.columns([1, 1])
+                    # E. WHATSAPP Y PDF 
+                    col_pdf, col_wa = st.columns([1, 1])
+                    
                     if numeros_sel:
-                        # 1. WHATSAPP
+                        # --- PREPARACIÓN DE DATOS COMUNES ---
+                        # Nombres para PDF
+                        partes_nom = datos_c['nombre'].strip().upper().split()
+                        if len(partes_nom) >= 3:
+                            nom_archivo_cli = f"{partes_nom[0]}_{partes_nom[2]}"
+                        elif len(partes_nom) == 2:
+                            nom_archivo_cli = f"{partes_nom[0]}_{partes_nom[1]}"
+                        else:
+                            nom_archivo_cli = partes_nom[0] if partes_nom else "CLIENTE"
+
+                        # Mensaje para WhatsApp
                         partes_msg = [f"N° {fmt_num.format(d['numero'])} ({d['estado'].upper()})" for d in datos_sel]
                         txt_boletos = ", ".join(partes_msg)
-                        
                         tipo_txt = "los comprobantes de tus BOLETOS" if len(numeros_sel) > 1 else "el comprobante de tu BOLETO"
                         
                         msg_wa = (
@@ -905,37 +918,10 @@ def main():
                             f"{txt_boletos}, a nombre de {datos_c['nombre']} para el sorteo "
                             f"'{nombre_s}' del día {fecha_s} a las {hora_s}. ¡Suerte!🍀"
                         )
-                        
-                        # Lógica Permisiva (Igual a la función global)
-                        tel_raw = datos_c['telefono']
-                        tel_clean = "".join(filter(str.isdigit, str(tel_raw or "")))
-                        
-                        # Si es Venezuela (10 u 11 con 0), ajustamos. Si no, lo dejamos pasar.
-                        if len(tel_clean) == 10: 
-                            tel_final = "58" + tel_clean
-                        elif len(tel_clean) == 11 and tel_clean.startswith("0"): 
-                            tel_final = "58" + tel_clean[1:]
-                        else:
-                            tel_final = tel_clean # <--- ESTO HABILITA EXTRANJEROS
-                        
-                        if len(tel_final) >= 7: # Validación mínima
-                            link_wa = f"https://api.whatsapp.com/send?phone={tel_final}&text={urllib.parse.quote(msg_wa)}"
-                            col_wa.link_button("📲 WhatsApp", link_wa, use_container_width=True)
-                        else:
-                            col_wa.warning(f"Tel Inválido: {tel_raw}")
-                        
-                        # 2. PDF (Nombres con espacios, sin guion bajo)
+
+                        # --- COLUMNA 1: PDF ---
                         with col_pdf:
                             st.write("**Descargar PDFs:**")
-                            
-                            partes_nom = datos_c['nombre'].strip().upper().split()
-                            if len(partes_nom) >= 3:
-                                nom_archivo_cli = f"{partes_nom[0]}_{partes_nom[2]}"
-                            elif len(partes_nom) == 2:
-                                nom_archivo_cli = f"{partes_nom[0]}_{partes_nom[1]}"
-                            else:
-                                nom_archivo_cli = partes_nom[0] if partes_nom else "CLIENTE"
-
                             for d in datos_sel:
                                 info_pdf = {
                                     'cliente': datos_c['nombre'], 'cedula': datos_c['cedula'], 
@@ -945,13 +931,29 @@ def main():
                                     'fecha_asignacion': d['fecha']
                                 }
                                 pdf_data = generar_pdf_memoria(d['numero'], info_pdf, config_full, cantidad_boletos)
-                                
                                 n_file = f"{fmt_num.format(d['numero'])} {nom_archivo_cli} ({d['estado'].upper()}).pdf"
-                                
                                 st.download_button(f"📄 {fmt_num.format(d['numero'])}", pdf_data, n_file, "application/pdf", key=f"d_{d['numero']}", use_container_width=True)
+
+                        # --- COLUMNA 2: WHATSAPP ---
+                        with col_wa:
+                            st.write("**Enviar:**") # Espaciador visual para alinear con título de PDF
+                            tel_raw = datos_c['telefono']
+                            tel_clean = "".join(filter(str.isdigit, str(tel_raw or "")))
+                            
+                            if len(tel_clean) == 10: tel_final = "58" + tel_clean
+                            elif len(tel_clean) == 11 and tel_clean.startswith("0"): tel_final = "58" + tel_clean[1:]
+                            else: tel_final = tel_clean
+                            
+                            if len(tel_final) >= 7:
+                                link_wa = f"https://api.whatsapp.com/send?phone={tel_final}&text={urllib.parse.quote(msg_wa)}"
+                                st.link_button("📲 WhatsApp", link_wa, use_container_width=True)
+                            else:
+                                st.warning(f"Tel Inválido: {tel_raw}")
+
                     else:
-                        col_wa.button("📲 WhatsApp", disabled=True, use_container_width=True)
+                        # Estado inactivo (sin selección)
                         col_pdf.info("Selecciona para ver PDFs")
+                        col_wa.button("📲 WhatsApp", disabled=True, use_container_width=True)
                         
     # ---------------- PESTAÑA CLIENTES ----------------
     with tab_clientes:
