@@ -1089,7 +1089,7 @@ def main():
             st.rerun()
             
         # --- BOTÓN DE REPORTE TOTAL EN EXCEL ---
-        # Descarga todo el historial de movimientos de este sorteo
+        # CAMBIA 'fecha_registro' AQUÍ TAMBIÉN
         rows_hist = run_query("""
             SELECT fecha_registro, usuario, accion, detalle, monto 
             FROM historial WHERE sorteo_id = %s ORDER BY id DESC
@@ -1210,8 +1210,7 @@ def main():
 #  HELPER: REGISTRO DE HISTORIAL
 # ============================================================================
 def log_movimiento(sorteo_id, accion, detalle, monto):
-    """Guarda un movimiento en la tabla historial."""
-    # Asume que la tabla 'historial' tiene una columna 'fecha_registro' con default NOW()
+    # CAMBIA 'fecha_registro' POR EL NOMBRE QUE TENGAS EN TU BASE DE DATOS (ej: 'fecha')
     sql = """
         INSERT INTO historial (sorteo_id, usuario, accion, detalle, monto, fecha_registro)
         VALUES (%s, 'MOVIL', %s, %s, %s, NOW())
