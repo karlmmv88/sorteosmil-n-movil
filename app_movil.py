@@ -866,6 +866,9 @@ def main():
                                       on_click=on_click_btn, 
                                       use_container_width=True)
 
+                    numeros_sel = sorted(st.session_state.seleccion_actual)
+                    datos_sel = [datos_boletos_map[n] for n in numeros_sel]
+
                     # C. ZONA ABONO
                     if len(numeros_sel) == 1:
                         dato_unico = datos_sel[0]
