@@ -907,41 +907,46 @@ def main():
                                     log_movimiento(id_sorteo, 'ABONO', f"Boleto {fmt_num.format(dato_unico['numero'])} - {datos_c['nombre']}", m) # LOG
                                     st.session_state.seleccion_actual = []; st.rerun()
 
-                    # D. BOTONES DE ACCIÓN MASIVA (LOG UNIFICADO CON MONTOS)
+                    # D. BOTONES DE ACCIÓN MASIVA (LÓGICA BANCARIA)
                     if numeros_sel:
                         st.write("### ⚡ Acciones Masivas")
                         c_acc1, c_acc2, c_acc3 = st.columns(3)
                         
+                        # Preparamos el texto: "01, 05, 10"
                         txt_nums = ", ".join([fmt_num.format(d['numero']) for d in datos_sel])
                         
                         # 1. PAGAR TODOS
-                        if c_acc1.button("✅ PAGAR", use_container_width=True):
+                        if c_acc1.button("✅ PAGAR SELECCIÓN", use_container_width=True):
                             total_cobrado = 0.0
                             for d in datos_sel:
                                 run_query("UPDATE boletos SET estado='pagado', total_abonado=%s WHERE sorteo_id=%s AND numero=%s", (d['precio'], id_sorteo, d['numero']), fetch=False)
-                                # Sumamos lo que faltaba por pagar de cada boleto (Precio - lo que ya tenía abonado)
-                                # O si prefieres registrar el precio total del boleto, usa d['precio']
-                                total_cobrado += d['precio'] 
+                                total_cobrado += d['precio']
                             
-                            # LOG: Registramos el total de dinero movido
+                            # GUARDAMOS CON || PARA QUE EL REPORTE SAQUE EL NOMBRE
                             log_movimiento(id_sorteo, 'PAGO_MASIVO', f"{txt_nums}||{datos_c['nombre']}", total_cobrado)
-                            st.session_state.seleccion_actual = []; st.success("Pagado"); time.sleep(1); st.rerun()
+                            
+                            st.session_state.seleccion_actual = []
+                            st.success(f"✅ Pagado: {txt_nums}"); time.sleep(1); st.rerun()
                         
                         # 2. APARTAR TODOS
-                        if c_acc2.button("📌 APARTAR", use_container_width=True):
+                        if c_acc2.button("📌 APARTAR SELECCIÓN", use_container_width=True):
                             for d in datos_sel:
                                 run_query("UPDATE boletos SET estado='apartado', total_abonado=0 WHERE sorteo_id=%s AND numero=%s", (id_sorteo, d['numero']), fetch=False)
                             
                             log_movimiento(id_sorteo, 'REVERSO_MASIVO', f"{txt_nums}||{datos_c['nombre']}", 0)
-                            st.session_state.seleccion_actual = []; st.success("Apartado"); time.sleep(1); st.rerun()
+                            
+                            st.session_state.seleccion_actual = []
+                            st.success(f"📌 Apartado: {txt_nums}"); time.sleep(1); st.rerun()
 
                         # 3. LIBERAR TODOS
-                        if c_acc3.button("🗑 LIBERAR", type="primary", use_container_width=True):
+                        if c_acc3.button("🗑️ LIBERAR SELECCIÓN", type="primary", use_container_width=True):
                             for d in datos_sel:
                                 run_query("DELETE FROM boletos WHERE sorteo_id=%s AND numero=%s", (id_sorteo, d['numero']), fetch=False)
                             
                             log_movimiento(id_sorteo, 'LIBERACION_MASIVA', f"{txt_nums}||{datos_c['nombre']}", 0)
-                            st.session_state.seleccion_actual = []; st.warning("Liberado"); time.sleep(1); st.rerun()
+                            
+                            st.session_state.seleccion_actual = []
+                            st.warning(f"🗑️ Liberado: {txt_nums}"); time.sleep(1); st.rerun()
                     
                     # E. WHATSAPP Y PDF (Orden PDF -> WhatsApp)
                     col_pdf, col_wa = st.columns([1, 1])
