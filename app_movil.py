@@ -842,8 +842,8 @@ def main():
                     if c_nada.button("🗑️ Desmarcar Todo", use_container_width=True, key="btn_none"):
                         st.session_state.seleccion_actual = []
                         st.rerun()
-                    # ------------------------------------------
-
+     
+                    # --- GRILLA DE BOTONES INDIVIDUALES ---
                     cols_sel = st.columns(5)
                     datos_boletos_map = {} 
 
