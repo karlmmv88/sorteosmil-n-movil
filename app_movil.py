@@ -847,13 +847,11 @@ def main():
                     cols_info = st.columns(4) 
                     for i, b in enumerate(boletos_cli):
                         num, est = b[0], b[1]
-                        if est == 'abonado': bg = "#1a73e8"
-                        elif est == 'apartado': bg = "#FFC107"
-                        else: bg = "#9e9e9e"
+                        bg_color = "#1a73e8" if est == 'abonado' else ("#FFC107" if est == 'apartado' else "#9e9e9e")
+                        txt_estado = est.upper()
                         
-                        html_card = f"""<div style="background-color: {bg}; border-radius: 10px; padding: 10px; text-align: center; margin-bottom: 10px; color: white; font-weight: bold;">
-                            <span style="font-size: 20px;">{fmt_num.format(num)}</span><br><span style="font-size: 10px;">{est.upper()}</span>
-                        </div>"""
+                        html_card = f"""<div style="background-color: {bg_color}; border-radius: 10px; padding: 15px; text-align: center; margin-bottom: 15px; color: white;"><div style="font-size: 24px; font-weight: bold;">{fmt_num.format(num)}</div><div style="font-size: 12px;">{txt_estado}</div></div>"""
+                        
                         with cols_info[i % 4]: st.markdown(html_card, unsafe_allow_html=True)
                     
                     st.divider()
@@ -918,49 +916,66 @@ def main():
                                     log_movimiento(id_sorteo, 'ABONO', f"Boleto {fmt_num.format(dato_unico['numero'])} - {datos_c['nombre']}", m) # LOG
                                     st.session_state.seleccion_actual = []; st.rerun()
 
-                    # D. BOTONES DE ACCIÓN (LÓGICA BANCARIA UNIFICADA)
+                    # D. BOTONES DE ACCIÓN (INTELIGENTES)
                     if numeros_sel:
                         st.write("### ⚡ Acciones Masivas")
-                        c_acc1, c_acc2, c_acc3 = st.columns(3)
                         
-                        # Agrupamos números: "01, 05, 10"
+                        # 1. ANALIZAR ESTADOS
+                        # Solo mostrar PAGAR si hay al menos un boleto que NO está pagado
+                        mostrar_pagar = any(d['estado'] != 'pagado' for d in datos_sel)
+                        
+                        # Solo mostrar APARTAR si NINGUNO está apartado (y tampoco pagado)
+                        # Si seleccionas algo que ya es 'apartado', el botón desaparece (según tu petición)
+                        mostrar_apartar = all(d['estado'] != 'apartado' and d['estado'] != 'pagado' for d in datos_sel)
+                        
+                        # Liberar siempre visible
+                        mostrar_liberar = True
+
+                        # 2. CREAR COLUMNAS DINÁMICAS
+                        cols_btns = st.columns(sum([mostrar_pagar, mostrar_apartar, mostrar_liberar]))
+                        idx_col = 0
+                        
                         txt_nums = ", ".join([fmt_num.format(d['numero']) for d in datos_sel])
                         
-                        # 1. PAGAR TODOS
-                        if c_acc1.button("✅ PAGADO", use_container_width=True):
-                            total_cobrado = 0.0
-                            for d in datos_sel:
-                                run_query("UPDATE boletos SET estado='pagado', total_abonado=%s WHERE sorteo_id=%s AND numero=%s", (d['precio'], id_sorteo, d['numero']), fetch=False)
-                                # Sumamos el precio total al monto de la operación
-                                total_cobrado += d['precio']
-                            
-                            # LOG: Usamos '||' y enviamos el monto total
-                            log_movimiento(id_sorteo, 'PAGO_MASIVO', f"{txt_nums}||{datos_c['nombre']}", total_cobrado)
-                            
-                            st.session_state.seleccion_actual = []
-                            st.success(f"✅ Pagado: {txt_nums}"); time.sleep(1); st.rerun()
+                        # BOTÓN 1: PAGAR
+                        if mostrar_pagar:
+                            with cols_btns[idx_col]:
+                                if st.button("✅ PAGADO", use_container_width=True):
+                                    total_cobrado = 0.0
+                                    for d in datos_sel:
+                                        saldo = d['precio'] - d['abonado']
+                                        if saldo > 0: # Solo cobramos deuda pendiente
+                                            run_query("UPDATE boletos SET estado='pagado', total_abonado=%s WHERE sorteo_id=%s AND numero=%s", (d['precio'], id_sorteo, d['numero']), fetch=False)
+                                            total_cobrado += saldo
+                                    
+                                    if total_cobrado > 0:
+                                        log_movimiento(id_sorteo, 'PAGO_MASIVO', f"{txt_nums}||{datos_c['nombre']}", total_cobrado)
+                                    
+                                    st.session_state.seleccion_actual = []
+                                    st.success(f"✅ Pagado: {txt_nums}"); time.sleep(1); st.rerun()
+                            idx_col += 1
                         
-                        # 2. APARTAR TODOS
-                        if c_acc2.button("📌 APARTADO", use_container_width=True):
-                            for d in datos_sel:
-                                run_query("UPDATE boletos SET estado='apartado', total_abonado=0 WHERE sorteo_id=%s AND numero=%s", (id_sorteo, d['numero']), fetch=False)
-                            
-                            # LOG: Monto 0
-                            log_movimiento(id_sorteo, 'REVERSO_MASIVO', f"{txt_nums}||{datos_c['nombre']}", 0)
-                            
-                            st.session_state.seleccion_actual = []
-                            st.success(f"📌 Apartado: {txt_nums}"); time.sleep(1); st.rerun()
+                        # BOTÓN 2: APARTAR
+                        if mostrar_apartar:
+                            with cols_btns[idx_col]:
+                                if st.button("📌 APARTADO", use_container_width=True):
+                                    for d in datos_sel:
+                                        run_query("UPDATE boletos SET estado='apartado', total_abonado=0 WHERE sorteo_id=%s AND numero=%s", (id_sorteo, d['numero']), fetch=False)
+                                    
+                                    log_movimiento(id_sorteo, 'REVERSO_MASIVO', f"{txt_nums}||{datos_c['nombre']}", 0)
+                                    st.session_state.seleccion_actual = []
+                                    st.success(f"📌 Apartado: {txt_nums}"); time.sleep(1); st.rerun()
+                            idx_col += 1
 
-                        # 3. LIBERAR TODOS
-                        if c_acc3.button("🗑 LIBERAR", type="primary", use_container_width=True):
-                            for d in datos_sel:
-                                run_query("DELETE FROM boletos WHERE sorteo_id=%s AND numero=%s", (id_sorteo, d['numero']), fetch=False)
-                            
-                            # LOG: Monto 0
-                            log_movimiento(id_sorteo, 'LIBERACION_MASIVA', f"{txt_nums}||{datos_c['nombre']}", 0)
-                            
-                            st.session_state.seleccion_actual = []
-                            st.warning(f"🗑️ Liberado: {txt_nums}"); time.sleep(1); st.rerun()
+                        # BOTÓN 3: LIBERAR
+                        with cols_btns[idx_col]:
+                            if st.button("🗑 LIBERAR", type="primary", use_container_width=True):
+                                for d in datos_sel:
+                                    run_query("DELETE FROM boletos WHERE sorteo_id=%s AND numero=%s", (id_sorteo, d['numero']), fetch=False)
+                                
+                                log_movimiento(id_sorteo, 'LIBERACION_MASIVA', f"{txt_nums}||{datos_c['nombre']}", 0)
+                                st.session_state.seleccion_actual = []
+                                st.warning(f"🗑️ Liberado: {txt_nums}"); time.sleep(1); st.rerun()
                     
                     # E. WHATSAPP Y PDF (Orden PDF -> WhatsApp)
                     col_pdf, col_wa = st.columns([1, 1])
