@@ -760,7 +760,7 @@ def main():
                         nom_sel = st.selectbox("Cliente", options=[""] + list(opc_cli.keys()), key="sel_cli_masiva")
 
                         # BOTÓN DE REGISTRAR
-                        if st.button("💾 REGISTRAR VENTA MASIVA", use_container_width=True):
+                        if st.button("💾 ASIGNAR", use_container_width=True):
                             if nom_sel:
                                 cid = opc_cli[nom_sel]
                                 
@@ -773,7 +773,7 @@ def main():
                                 
                                 # 2. Registrar en el REPORTE (Tabla 'movimientos')
                                 # Formateamos números con ceros (ej: 004, 025)
-                                fmt = "{:02d}" if cant_boletos < 1000 else "{:03d}"
+                                fmt = "{:02d}" if cantidad_boletos < 1000 else "{:03d}"
                                 txt_nums_reporte = ", ".join([fmt.format(n) for n in lista_busqueda])
                                 
                                 # IMPORTANTE: Aquí creamos el texto que lee el Excel (Numeros || Cliente)
