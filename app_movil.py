@@ -40,8 +40,39 @@ def run_query(query, params=None, fetch=True):
                 conn.commit()
                 return True
     except Exception as e:
+        # 🔥 ESTA LÍNEA ES LA SOLUCIÓN:
+        conn.rollback() 
         st.error(f"Error SQL: {e}")
         return None
+
+# ============================================================================
+#  CONTROL DE INACTIVIDAD (5 MINUTOS)
+# ============================================================================
+def verificar_inactividad():
+    # Tiempo límite en segundos (5 minutos * 60 segundos = 300)
+    TIMEOUT_SEGUNDOS = 300 
+    
+    # Obtenemos la hora actual
+    now = time.time()
+    
+    # Si ya existe un registro de última actividad
+    if 'ultima_actividad' in st.session_state:
+        tiempo_transcurrido = now - st.session_state['ultima_actividad']
+        
+        # Si pasó más tiempo del permitido
+        if tiempo_transcurrido > TIMEOUT_SEGUNDOS:
+            st.warning("⚠️ Sesión cerrada por inactividad (5 min).")
+            # Borramos la autenticación
+            st.session_state["password_correct"] = False
+            # Borramos el registro de tiempo
+            del st.session_state['ultima_actividad']
+            time.sleep(2) # Damos tiempo para leer el mensaje
+            st.rerun() # Recargamos la página para ir al Login
+            return False
+
+    # Si hay movimiento, actualizamos la hora a "ahora mismo"
+    st.session_state['ultima_actividad'] = now
+    return True
 
 # ============================================================================
 #  1. FORMATO DE WHATSAPP (Global - Con Emoji, Hora y Soporte Extranjero)
@@ -1217,34 +1248,7 @@ def log_movimiento(sorteo_id, accion, detalle, monto):
     """
     run_query(sql, (sorteo_id, accion, detalle, monto), fetch=False)
                             
-# ============================================================================
-#  CONTROL DE INACTIVIDAD (5 MINUTOS)
-# ============================================================================
-def verificar_inactividad():
-    # Tiempo límite en segundos (5 minutos * 60 segundos = 300)
-    TIMEOUT_SEGUNDOS = 300 
-    
-    # Obtenemos la hora actual
-    now = time.time()
-    
-    # Si ya existe un registro de última actividad
-    if 'ultima_actividad' in st.session_state:
-        tiempo_transcurrido = now - st.session_state['ultima_actividad']
-        
-        # Si pasó más tiempo del permitido
-        if tiempo_transcurrido > TIMEOUT_SEGUNDOS:
-            st.warning("⚠️ Sesión cerrada por inactividad (5 min).")
-            # Borramos la autenticación
-            st.session_state["password_correct"] = False
-            # Borramos el registro de tiempo
-            del st.session_state['ultima_actividad']
-            time.sleep(2) # Damos tiempo para leer el mensaje
-            st.rerun() # Recargamos la página para ir al Login
-            return False
 
-    # Si hay movimiento, actualizamos la hora a "ahora mismo"
-    st.session_state['ultima_actividad'] = now
-    return True
 
 # ============================================================================
 #  PUNTO DE ENTRADA (CON LOGIN Y TIMEOUT)
