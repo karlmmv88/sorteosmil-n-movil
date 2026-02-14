@@ -44,7 +44,18 @@ def run_query(query, params=None, fetch=True):
         conn.rollback() 
         st.error(f"Error SQL: {e}")
         return None
-
+    
+# ============================================================================
+#  HELPER: REGISTRO DE HISTORIAL
+# ============================================================================
+def log_movimiento(sorteo_id, accion, detalle, monto):
+    # CAMBIA 'fecha_registro' POR EL NOMBRE QUE TENGAS EN TU BASE DE DATOS (ej: 'fecha')
+    sql = """
+        INSERT INTO historial (sorteo_id, usuario, accion, detalle, monto, fecha_registro)
+        VALUES (%s, 'MOVIL', %s, %s, %s, NOW())
+    """
+    run_query(sql, (sorteo_id, accion, detalle, monto), fetch=False)
+    
 # ============================================================================
 #  CONTROL DE INACTIVIDAD (5 MINUTOS)
 # ============================================================================
@@ -1111,43 +1122,103 @@ def main():
                             st.session_state.edit_vals = c
                             st.rerun() # <--- IMPORTANTE: Fuerza la actualización inmediata
 
-    # ---------------- PESTAÑA COBRANZA (AGRUPADA POR CLIENTE) ----------------
+# ---------------- PESTAÑA COBRANZA ----------------
     with tab_cobranza:
-        st.header("💸 Gestión de Cobranza")
+        st.header("📊 Gestión de Cobranza")
         
-        c_ref, c_rep = st.columns([1, 1])
-        if c_ref.button("🔄 Actualizar Lista", use_container_width=True):
+        # Botón para refrescar datos en pantalla
+        if st.button("🔄 Actualizar Datos", use_container_width=True):
             st.rerun()
-            
-        # --- BOTÓN DE REPORTE TOTAL EN EXCEL ---
-        # CAMBIA 'fecha_registro' AQUÍ TAMBIÉN
-        rows_hist = run_query("""
-            SELECT fecha_registro, usuario, accion, detalle, monto 
-            FROM historial WHERE sorteo_id = %s ORDER BY id DESC
-        """, (id_sorteo,))
+
+        st.write("---")
         
-        if rows_hist:
-            df = pd.DataFrame(rows_hist, columns=["Fecha", "Usuario", "Acción", "Detalle", "Monto"])
-            # Formatear fecha si es necesario
-            df['Fecha'] = pd.to_datetime(df['Fecha']).dt.strftime('%d/%m/%Y %I:%M %p')
+        # ========================================================
+        #  GENERACIÓN DEL REPORTE UNIFICADO (IGUAL A PC)
+        # ========================================================
+        
+        # 1. OBTENER DATOS DE "ESTADO ACTUAL" (Los 90 boletos ocupados)
+        # Esta consulta trae CUALQUIER boleto que tenga dueño, sin importar si se vendió en PC o Móvil.
+        sql_estado = """
+            SELECT 
+                b.numero as "Número", 
+                c.nombre_completo as "Cliente", 
+                c.telefono as "Teléfono", 
+                c.cedula as "Cédula",
+                UPPER(b.estado) as "Estado", 
+                b.precio as "Precio ($)", 
+                b.total_abonado as "Abonado ($)", 
+                (b.precio - b.total_abonado) as "Saldo Pendiente ($)",
+                b.fecha_asignacion as "Fecha Asignación"
+            FROM boletos b
+            JOIN clientes c ON b.cliente_id = c.id
+            WHERE b.sorteo_id = %s
+            ORDER BY b.numero ASC
+        """
+        rows_estado = run_query(sql_estado, (id_sorteo,))
+
+        # 2. OBTENER DATOS DE "HISTORIAL" (Bitácora de movimientos)
+        sql_hist = """
+            SELECT 
+                fecha_registro as "Fecha/Hora",
+                usuario as "Usuario", 
+                accion as "Acción", 
+                detalle as "Detalle", 
+                monto as "Monto ($)"
+            FROM historial 
+            WHERE sorteo_id = %s 
+            ORDER BY id DESC
+        """
+        rows_hist = run_query(sql_hist, (id_sorteo,))
+
+        # 3. CREAR EL ARCHIVO EXCEL CON 2 PESTAÑAS
+        buffer = io.BytesIO()
+        
+        # Usamos un bloque try/except para evitar errores si no hay datos en alguna tabla
+        hay_datos = False
+        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
             
-            buffer = io.BytesIO()
-            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                df.to_excel(writer, index=False, sheet_name='Movimientos')
-            
-            c_rep.download_button(
-                label="📥 Reporte Total (Excel)",
+            # --- HOJA 1: ESTADO GENERAL (Tus 90 boletos) ---
+            if rows_estado:
+                df_estado = pd.DataFrame(rows_estado, columns=["Número", "Cliente", "Teléfono", "Cédula", "Estado", "Precio ($)", "Abonado ($)", "Saldo Pendiente ($)", "Fecha Asignación"])
+                # Formatear fecha para que se vea bien
+                try: df_estado["Fecha Asignación"] = pd.to_datetime(df_estado["Fecha Asignación"]).dt.strftime('%d/%m/%Y')
+                except: pass
+                
+                df_estado.to_excel(writer, index=False, sheet_name='Estado General')
+                hay_datos = True
+            else:
+                # Si no hay ventas, creamos una hoja vacía con encabezados
+                pd.DataFrame(columns=["Mensaje"]).to_excel(writer, sheet_name='Estado General', index=False)
+
+            # --- HOJA 2: MOVIMIENTOS (Bitácora) ---
+            if rows_hist:
+                df_hist = pd.DataFrame(rows_hist, columns=["Fecha/Hora", "Usuario", "Acción", "Detalle", "Monto ($)"])
+                try: df_hist["Fecha/Hora"] = pd.to_datetime(df_hist["Fecha/Hora"]).dt.strftime('%d/%m/%Y %I:%M %p')
+                except: pass
+                
+                df_hist.to_excel(writer, index=False, sheet_name='Historial Movimientos')
+                hay_datos = True
+        
+        # 4. MOSTRAR EL BOTÓN DE DESCARGA
+        if hay_datos:
+            st.download_button(
+                label="📥 DESCARGAR REPORTE COMPLETO (Excel)",
                 data=buffer,
                 file_name=f"Reporte_Total_{nombre_s}.xlsx",
                 mime="application/vnd.ms-excel",
-                use_container_width=True
+                use_container_width=True,
+                type="primary" # Botón destacado
             )
         else:
-            c_rep.info("Sin historial.")
-            
+            st.info("No hay información para generar reporte.")
+
         st.divider()
             
-        # 1. CONSULTA DE DEUDORES (Buscamos boletos con deuda > 0.01)
+        # ========================================================
+        #  VISUALIZACIÓN DE COBRANZA EN PANTALLA
+        # ========================================================
+        # (Esto sigue igual para que puedas cobrar rápido desde el cel)
+        
         raw_deudores = run_query("""
             SELECT c.nombre_completo, c.telefono, b.numero, b.precio, b.total_abonado
             FROM boletos b
@@ -1159,96 +1230,51 @@ def main():
         """, (id_sorteo,))
         
         if not raw_deudores:
-            st.balloons()
-            st.success("✅ ¡Excelente! No hay deudas pendientes en este sorteo.")
+            st.success("✅ ¡Cero Deudas! Todos están al día.")
         else:
-            # 2. PROCESAMIENTO: AGRUPAR POR CLIENTE
-            # Estructura: { "Nombre|Tel": { datos... } }
             grupos = {}
-            
             for row in raw_deudores:
                 nom, tel, num, prec, abon = row
                 prec = float(prec or 0); abon = float(abon or 0)
                 deuda = prec - abon
-                
-                # Usamos Nombre+Tel como clave única
                 clave = f"{nom}|{tel}"
-                
                 if clave not in grupos:
-                    grupos[clave] = {
-                        'nombre': nom, 'tel': tel, 'numeros': [],
-                        't_deuda': 0.0, 't_abono': 0.0, 't_precio': 0.0
-                    }
-                
+                    grupos[clave] = {'nombre': nom, 'tel': tel, 'numeros': [], 't_deuda': 0.0}
                 grupos[clave]['numeros'].append(num)
                 grupos[clave]['t_deuda'] += deuda
-                grupos[clave]['t_abono'] += abon
-                grupos[clave]['t_precio'] += prec
 
-            # 3. MOSTRAR TOTALES GLOBALES
             gran_total = sum(g['t_deuda'] for g in grupos.values())
-            st.metric("Total por Cobrar (Global)", f"${gran_total:,.2f}", f"{len(grupos)} Clientes Deudores")
-            st.divider()
+            st.metric("Total por Cobrar", f"${gran_total:,.2f}", f"{len(grupos)} Clientes con deuda")
+            
+            st.write("---")
 
-            # 4. RENDERIZAR TARJETAS POR CLIENTE
             fmt_num = "{:02d}" if cantidad_boletos <= 100 else "{:03d}"
             
             for clave, d in grupos.items():
                 nom = d['nombre']
                 tel = d['tel']
                 lista_nums = sorted(d['numeros'])
-                
-                # Formatear lista de números (Ej: "05, 12, 20")
                 str_numeros = ", ".join([fmt_num.format(n) for n in lista_nums])
                 
                 with st.container(border=True):
                     c_info, c_btn = st.columns([2, 1])
-                    
                     with c_info:
                         st.markdown(f"👤 **{nom}**")
-                        # Muestra qué números tiene
-                        st.caption(f"🎟️ Boletos ({len(lista_nums)}): **{str_numeros}**")
-                        
-                        # Muestra Totales
-                        st.write(f"🔴 Deuda Total: :red[**${d['t_deuda']:,.2f}**]")
-                        
-                        # Si tiene abonos, los mostramos
-                        if d['t_abono'] > 0:
-                            st.caption(f"💰 (Abonó: ${d['t_abono']:,.2f} | Total: ${d['t_precio']:,.2f})")
-                        else:
-                            st.caption(f"💵 Total a pagar: ${d['t_precio']:,.2f}")
-
+                        st.caption(f"🎟️ Boletos: **{str_numeros}**")
+                        st.write(f"🔴 Deuda: :red[**${d['t_deuda']:,.2f}**]")
                     with c_btn:
                         if tel and len(str(tel)) > 5:
-                            # Preparar Link WhatsApp
                             tel_clean = "".join(filter(str.isdigit, str(tel)))
                             if len(tel_clean) == 10: tel_clean = "58" + tel_clean
                             elif len(tel_clean) == 11 and tel_clean.startswith("0"): tel_clean = "58" + tel_clean[1:]
                             
-                            # Mensaje Plural o Singular
-                            txt_concepto = "del boleto" if len(lista_nums) == 1 else "de los boletos"
-                            
                             msg = (f"Hola {nom}, saludos de Sorteos Milán. "
-                                   f"Te recordamos amablemente que tienes un saldo pendiente de ${d['t_deuda']:.2f} "
-                                   f"por concepto {txt_concepto}: {str_numeros}. Agradecemos tu pago. ¡Gracias!")
-                            
-                            link = f"https://wa.me/{tel_clean}?text={urllib.parse.quote(msg)}"
+                                   f"Tienes un saldo pendiente de ${d['t_deuda']:.2f} "
+                                   f"por los boletos: {str_numeros}. Agradecemos tu pago.")
+                            link = f"https://api.whatsapp.com/send?phone={tel_clean}&text={urllib.parse.quote(msg)}"
                             st.link_button("📲 Cobrar", link, use_container_width=True)
                         else:
                             st.warning("Sin Tel")
-
-# ============================================================================
-#  HELPER: REGISTRO DE HISTORIAL
-# ============================================================================
-def log_movimiento(sorteo_id, accion, detalle, monto):
-    # CAMBIA 'fecha_registro' POR EL NOMBRE QUE TENGAS EN TU BASE DE DATOS (ej: 'fecha')
-    sql = """
-        INSERT INTO historial (sorteo_id, usuario, accion, detalle, monto, fecha_registro)
-        VALUES (%s, 'MOVIL', %s, %s, %s, NOW())
-    """
-    run_query(sql, (sorteo_id, accion, detalle, monto), fetch=False)
-                            
-
 
 # ============================================================================
 #  PUNTO DE ENTRADA (CON LOGIN Y TIMEOUT)
