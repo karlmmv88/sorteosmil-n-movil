@@ -921,11 +921,11 @@ def main():
                     if numeros_sel:
                         st.write("### ⚡ Acciones Masivas")
                         
-                        # Definimos las 3 columnas fijas para que el tamaño sea igual siempre
+                        # Usamos 3 columnas fijas para que el tamaño sea idéntico al Modo A
                         c_acc1, c_acc2, c_acc3 = st.columns(3)
                         txt_nums = ", ".join([fmt_num.format(d['numero']) for d in datos_sel])
 
-                        # 1. BOTÓN PAGADO: Solo si alguno NO está pagado
+                        # 1. BOTÓN PAGADO: Aparece si alguno NO está pagado
                         if any(d['estado'] != 'pagado' for d in datos_sel):
                             if c_acc1.button("✅ PAGADO", use_container_width=True):
                                 total_cobrado = 0.0
@@ -939,8 +939,8 @@ def main():
                                 st.session_state.seleccion_actual = []
                                 st.success(f"✅ Pagado: {txt_nums}"); time.sleep(1); st.rerun()
                         
-                        # 2. BOTÓN APARTAR: No aparece si ya está APARTADO o si ya está PAGADO (Igual que Modo A)
-                        if any(d['estado'] != 'apartado' and d['estado'] != 'pagado' for d in datos_sel):
+                        # 2. BOTÓN APARTAR: Aparece si alguno NO está apartado (Permite revertir pagados)
+                        if any(d['estado'] != 'apartado' for d in datos_sel):
                             if c_acc2.button("📌 APARTAR", use_container_width=True):
                                 for d in datos_sel:
                                     run_query("UPDATE boletos SET estado='apartado', total_abonado=0 WHERE sorteo_id=%s AND numero=%s", (id_sorteo, d['numero']), fetch=False)
