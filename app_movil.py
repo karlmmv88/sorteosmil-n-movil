@@ -754,16 +754,14 @@ def main():
                         if ocupados:
                             st.error(f"❌ Ocupados: {', '.join([fmt_num.format(n) for n in ocupados])}")
                         else:
-                            txt_nums = ", ".join([fmt_num.format(n) for n in lista_busqueda])
-                            st.success(f"🟢 Disponibles: {txt_nums}")
+                            # Previsualización de números
+                            txt_nums_prev = ", ".join([fmt_num.format(n) for n in lista_busqueda])
+                            st.success(f"🟢 Disponibles: {txt_nums_prev}")
+                            
                             with st.form("venta_multi"):
                                 st.write(f"### 📝 Asignar: {lista_fmt}")
                                 clientes = run_query("SELECT id, nombre_completo, codigo FROM clientes ORDER BY nombre_completo")
-                                opc_cli = {} 
-                                if clientes:
-                                    for c in clientes:
-                                        cod_d = c[2] if c[2] else "S/C"
-                                        opc_cli[f"{c[1]} | {cod_d}"] = c[0]
+                                opc_cli = {f"{c[1]} | {c[2] or 'S/C'}": c[0] for c in clientes} if clientes else {}
                                 
                                 nom_sel = st.selectbox("👤 Cliente:", options=list(opc_cli.keys()), index=None)
                                 st.divider()
@@ -778,15 +776,15 @@ def main():
                                         est = 'pagado' if abono_unit >= precio_s else 'abonado'
                                         if abono_unit == 0: est = 'apartado'
                                         
-                                        # 1. Guardar en BD (Uno por uno para que cada boleto tenga dueño)
+                                        # 1. Guardar en Base de Datos (Bucle)
                                         for n_bol in lista_busqueda:
                                             run_query("INSERT INTO boletos (sorteo_id, numero, estado, precio, cliente_id, total_abonado, fecha_asignacion) VALUES (%s, %s, %s, %s, %s, %s, NOW())", (id_sorteo, n_bol, est, precio_s, cid, abono_unit), fetch=False)
                                         
-                                        # 2. Guardar en HISTORIAL (Una sola línea resumen tipo Banco)
-                                        # Convertimos lista de números a texto: "01, 05, 10"
+                                        # 2. Guardar en Historial (UNA SOLA LÍNEA)
+                                        # CORRECCIÓN: Alineación exacta con el 'for' anterior
                                         txt_nums = ", ".join([fmt_num.format(n) for n in lista_busqueda])
                                         
-                                        # Enviamos con separador || y el monto TOTAL de la operación
+                                        # Usamos el separador || para el nombre y pasamos el total para el monto
                                         log_movimiento(id_sorteo, 'VENTA_MASIVA', f"{txt_nums}||{nom_sel}", total_operacion)
                                         
                                         st.success("✅ Venta Masiva Registrada"); time.sleep(1); st.rerun()
