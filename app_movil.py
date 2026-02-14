@@ -1269,16 +1269,24 @@ def main():
                             elif len(tel_clean) == 11 and tel_clean.startswith("0"): tel_clean = "58" + tel_clean[1:]
                             
                  # Mensaje Plural o Singular
-                            # Creamos el mensaje
+                        if tel and len(str(tel)) > 5:
+                            tel_clean = "".join(filter(str.isdigit, str(tel)))
+                            if len(tel_clean) == 10: tel_clean = "58" + tel_clean
+                            elif len(tel_clean) == 11 and tel_clean.startswith("0"): tel_clean = "58" + tel_clean[1:]
+                            
+                            # Definimos el concepto (Singular o Plural)
+                            txt_concepto = "de tus boletos" if len(lista_nums) > 1 else "de tu boleto"
+                            
+                            # Creamos el mensaje usando la variable ya definida
                             msg = (f"Hola {nom}, saludos de Sorteos Milán. "
                                    f"Te recordamos amablemente que tienes un saldo pendiente de ${d['t_deuda']:.2f} "
-                                   f"por concepto {txt_concepto}: {str_numeros}. Agradecemos tu pago. ¡Gracias!")
+                                   f"{txt_concepto}: {str_numeros}. Agradecemos tu pago. ¡Gracias! 🍀")
                             
-                            # Cambiamos wa.me por web.whatsapp.com/send
+                            # Enlace directo a WhatsApp Web
                             link = f"https://web.whatsapp.com/send?phone={tel_clean}&text={urllib.parse.quote(msg)}"
                             
                             st.link_button("📲 Cobrar", link, use_container_width=True)
-
+                            
 # ============================================================================
 #  PUNTO DE ENTRADA (CON LOGIN Y TIMEOUT)
 # ============================================================================
