@@ -830,6 +830,20 @@ def main():
                         st.session_state.seleccion_actual = [] 
                         st.session_state.cliente_previo = cid
 
+                    # --- NUEVO: BOTONES DE SELECCIÓN MASIVA ---
+                    # Extraemos todos los números del cliente actual
+                    todos_nums = [b[0] for b in boletos_cli]
+                    
+                    c_todos, c_nada = st.columns(2)
+                    if c_todos.button("✅ Marcar Todos", use_container_width=True, key="btn_all"):
+                        st.session_state.seleccion_actual = list(todos_nums)
+                        st.rerun()
+                        
+                    if c_nada.button("🗑️ Desmarcar Todo", use_container_width=True, key="btn_none"):
+                        st.session_state.seleccion_actual = []
+                        st.rerun()
+                    # ------------------------------------------
+
                     cols_sel = st.columns(5)
                     datos_boletos_map = {} 
 
@@ -837,6 +851,7 @@ def main():
                         num, est, pre, abo, f_asig = b
                         datos_boletos_map[num] = {'numero': num, 'estado': est, 'precio': pre, 'abonado': abo, 'fecha': f_asig}
                         
+                        # Selección Libre
                         es_seleccionado = num in st.session_state.seleccion_actual
                         str_btn = fmt_num.format(num)
                         label_btn = f"✔ {str_btn}" if es_seleccionado else f"{str_btn}"
@@ -847,12 +862,9 @@ def main():
                                 if n in st.session_state.seleccion_actual: st.session_state.seleccion_actual.remove(n)
                                 else: st.session_state.seleccion_actual.append(n)
 
-                            st.button(label_btn, key=f"btn_sel_{num}", type=type_btn, on_click=on_click_btn, use_container_width=True)
-
-                    numeros_sel = sorted(st.session_state.seleccion_actual)
-                    datos_sel = [datos_boletos_map[n] for n in numeros_sel]
-
-                    st.divider()
+                            st.button(label_btn, key=f"btn_sel_{num}", type=type_btn, 
+                                      on_click=on_click_btn, 
+                                      use_container_width=True)
 
                     # C. ZONA ABONO
                     if len(numeros_sel) == 1:
