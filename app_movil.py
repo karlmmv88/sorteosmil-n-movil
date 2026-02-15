@@ -1312,7 +1312,8 @@ def main():
                 with st.container(border=True):
                     c_info, c_btn = st.columns([2, 1])
                     with c_info:
-                        st.markdown(f"<b>{c[1]}</b>", unsafe_allow_html=True)
+                        # CORRECCIÓN AQUÍ: Usamos <b> y unsafe_allow_html=True
+                        st.markdown(f"👤 <b>{nom}</b>", unsafe_allow_html=True)
                         st.caption(f"🎟️ Boletos: **{str_numeros}**")
                         st.write(f"🔴 Deuda: :red[**${d['t_deuda']:,.2f}**]")
                     with c_btn:
