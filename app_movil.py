@@ -57,11 +57,11 @@ def log_movimiento(sorteo_id, accion, detalle, monto):
     run_query(sql, (sorteo_id, accion, detalle, monto), fetch=False)
     
 # ============================================================================
-#  CONTROL DE INACTIVIDAD (5 MINUTOS)
+#  CONTROL DE INACTIVIDAD (10 MINUTOS)
 # ============================================================================
 def verificar_inactividad():
     # Tiempo límite en segundos (5 minutos * 60 segundos = 300)
-    TIMEOUT_SEGUNDOS = 300 
+    TIMEOUT_SEGUNDOS = 600 
     
     # Obtenemos la hora actual
     now = time.time()
@@ -72,7 +72,7 @@ def verificar_inactividad():
         
         # Si pasó más tiempo del permitido
         if tiempo_transcurrido > TIMEOUT_SEGUNDOS:
-            st.warning("⚠️ Sesión cerrada por inactividad (5 min).")
+            st.warning("⚠️ Sesión cerrada por inactividad (10 min).")
             # Borramos la autenticación
             st.session_state["password_correct"] = False
             # Borramos el registro de tiempo
@@ -1156,47 +1156,74 @@ def main():
         """
         rows_estado = run_query(sql_estado, (id_sorteo,))
 
-        # 2. OBTENER DATOS DE "HISTORIAL" (Bitácora de movimientos)
+# -----------------------------------------------------------
+        # 2. OBTENER DATOS DE "HISTORIAL" (CORREGIDO)
+        # -----------------------------------------------------------
+        # Pedimos orden ASCENDENTE (del más viejo al más nuevo) para numerarlos cronológicamente
         sql_hist = """
             SELECT 
-                fecha_registro as "Fecha/Hora",
-                usuario as "Usuario", 
-                accion as "Acción", 
-                detalle as "Detalle", 
-                monto as "Monto ($)"
+                fecha_registro,
+                usuario, 
+                accion, 
+                detalle, 
+                monto
             FROM historial 
             WHERE sorteo_id = %s 
-            ORDER BY id DESC
+            ORDER BY id ASC
         """
         rows_hist = run_query(sql_hist, (id_sorteo,))
 
         # 3. CREAR EL ARCHIVO EXCEL CON 2 PESTAÑAS
         buffer = io.BytesIO()
         
-        # Usamos un bloque try/except para evitar errores si no hay datos en alguna tabla
         hay_datos = False
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
             
-            # --- HOJA 1: ESTADO GENERAL (Tus 90 boletos) ---
+            # --- HOJA 1: ESTADO GENERAL ---
             if rows_estado:
                 df_estado = pd.DataFrame(rows_estado, columns=["Número", "Cliente", "Teléfono", "Cédula", "Estado", "Precio ($)", "Abonado ($)", "Saldo Pendiente ($)", "Fecha Asignación"])
-                # Formatear fecha para que se vea bien
                 try: df_estado["Fecha Asignación"] = pd.to_datetime(df_estado["Fecha Asignación"]).dt.strftime('%d/%m/%Y')
                 except: pass
                 
                 df_estado.to_excel(writer, index=False, sheet_name='Estado General')
                 hay_datos = True
             else:
-                # Si no hay ventas, creamos una hoja vacía con encabezados
                 pd.DataFrame(columns=["Mensaje"]).to_excel(writer, sheet_name='Estado General', index=False)
 
-            # --- HOJA 2: MOVIMIENTOS (Bitácora) ---
+            # --- HOJA 2: MOVIMIENTOS (CORREGIDA) ---
             if rows_hist:
-                df_hist = pd.DataFrame(rows_hist, columns=["Fecha/Hora", "Usuario", "Acción", "Detalle", "Monto ($)"])
-                try: df_hist["Fecha/Hora"] = pd.to_datetime(df_hist["Fecha/Hora"]).dt.strftime('%d/%m/%Y %I:%M %p')
-                except: pass
+                # 1. Creamos DataFrame con datos crudos
+                df_hist = pd.DataFrame(rows_hist, columns=["FechaRaw", "Usuario", "Acción", "Detalle", "MontoRaw"])
                 
-                df_hist.to_excel(writer, index=False, sheet_name='Historial Movimientos')
+                # 2. Numeración de Transacción (1, 2, 3...)
+                # Como ordenamos por ID ASC en SQL, esto numera cronológicamente
+                df_hist.insert(0, "Nro. Transacción", range(1, len(df_hist) + 1))
+                
+                # 3. Separar Fecha y Hora
+                try:
+                    df_hist["FechaRaw"] = pd.to_datetime(df_hist["FechaRaw"])
+                    df_hist["Fecha"] = df_hist["FechaRaw"].dt.strftime('%d/%m/%Y')
+                    df_hist["Hora"] = df_hist["FechaRaw"].dt.strftime('%I:%M %p')
+                except:
+                    df_hist["Fecha"] = df_hist["FechaRaw"].astype(str)
+                    df_hist["Hora"] = ""
+
+                # 4. Formatear Monto (X.XX) forzando 2 decimales siempre
+                # Usamos float() para asegurar que es número y luego formateamos
+                df_hist["Monto ($)"] = df_hist["MontoRaw"].apply(lambda x: "{:.2f}".format(float(x) if x else 0.0))
+                
+                # 5. Seleccionar y Ordenar Columnas Finales
+                cols_finales = ["Nro. Transacción", "Fecha", "Hora", "Usuario", "Acción", "Detalle", "Monto ($)"]
+                df_export = df_hist[cols_finales]
+                
+                df_export.to_excel(writer, index=False, sheet_name='Historial Movimientos')
+                
+                # Ajuste visual de columnas (opcional, solo funciona con engine xlsxwriter)
+                worksheet = writer.sheets['Historial Movimientos']
+                worksheet.set_column('A:A', 15) # Ancho Nro
+                worksheet.set_column('B:C', 12) # Ancho Fechas
+                worksheet.set_column('F:F', 40) # Ancho Detalle
+                
                 hay_datos = True
         
         # 4. MOSTRAR EL BOTÓN DE DESCARGA
@@ -1207,7 +1234,7 @@ def main():
                 file_name=f"Reporte_Total_{nombre_s}.xlsx",
                 mime="application/vnd.ms-excel",
                 use_container_width=True,
-                type="primary" # Botón destacado
+                type="primary"
             )
         else:
             st.info("No hay información para generar reporte.")
