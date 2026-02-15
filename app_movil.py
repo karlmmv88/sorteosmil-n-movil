@@ -1312,7 +1312,7 @@ def main():
                 with st.container(border=True):
                     c_info, c_btn = st.columns([2, 1])
                     with c_info:
-                        st.markdown(f"👤 **{nom}**")
+                        st.markdown(f"<b>{c[1]}</b>", unsafe_allow_html=True)
                         st.caption(f"🎟️ Boletos: **{str_numeros}**")
                         st.write(f"🔴 Deuda: :red[**${d['t_deuda']:,.2f}**]")
                     with c_btn:
@@ -1335,7 +1335,6 @@ def main():
                                    f"Te recordamos amablemente que tienes un saldo pendiente de ${d['t_deuda']:.2f} "
                                    f"{txt_concepto}: {str_numeros}. Agradecemos tu pago. ¡Gracias! 🍀")
                             
-                            # Enlace directo a WhatsApp Web
                             link = f"https://web.whatsapp.com/send?phone={tel_clean}&text={urllib.parse.quote(msg)}"
                             
                             st.link_button("📲 Cobrar", link, use_container_width=True)
@@ -1350,5 +1349,4 @@ if __name__ == "__main__":
         if verificar_inactividad():
             # 3. Si está activo, corremos la app
             main()
-
 
