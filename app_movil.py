@@ -855,13 +855,19 @@ def main():
                     cols_info = st.columns(4) 
                     for i, b in enumerate(boletos_cli):
                         num, est = b[0], b[1]
+                        
+                        # Definición de colores
                         if est == 'abonado': bg = "#1a73e8"
                         elif est == 'apartado': bg = "#FFC107"
                         else: bg = "#9e9e9e"
                         
-                        html_card = f"""<div style="background-color: {bg}; border-radius: 10px; padding: 10px; text-align: center; margin-bottom: 10px; color: white; font-weight: bold;">
-                            <span style="font-size: 20px;">{fmt_num.format(num)}</span><br><span style="font-size: 10px;">{est.upper()}</span>
-                        </div>"""
+                        # --- CAMBIO: Usamos el MISMO HTML que en la búsqueda por número ---
+                        html_card = f"""
+                        <div style="background-color: {bg}; border-radius: 10px; padding: 15px; text-align: center; margin-bottom: 15px; color: white; box-shadow: 2px 2px 5px rgba(0,0,0,0.2);">
+                            <div style="font-size: 24px; font-weight: bold; line-height: 1.2;">{fmt_num.format(num)}</div>
+                            <div style="font-size: 14px; text-transform: uppercase; margin-top: 5px; opacity: 0.9;">{est.upper()}</div>
+                        </div>
+                        """
                         with cols_info[i % 4]: st.markdown(html_card, unsafe_allow_html=True)
                     
                     st.divider()
