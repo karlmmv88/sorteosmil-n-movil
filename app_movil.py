@@ -60,7 +60,7 @@ def log_movimiento(sorteo_id, accion, detalle, monto):
 #  CONTROL DE INACTIVIDAD (10 MINUTOS)
 # ============================================================================
 def verificar_inactividad():
-    # Tiempo límite en segundos (5 minutos * 60 segundos = 300)
+    # Tiempo límite en segundos (10 minutos * 60 segundos = 600)
     TIMEOUT_SEGUNDOS = 600 
     
     # Obtenemos la hora actual
@@ -1350,4 +1350,5 @@ if __name__ == "__main__":
         if verificar_inactividad():
             # 3. Si está activo, corremos la app
             main()
+
 
