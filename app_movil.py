@@ -1118,7 +1118,7 @@ def main():
                 with st.container(border=True):
                     c1, c2 = st.columns([3,1])
                     with c1:
-                        st.markdown(f"**{c[1]}**")
+                        st.markdown(f"<b>{c[1]}</b>", unsafe_allow_html=True)
                         st.caption(f"🆔 {c[2]} | 🔑 Cód: {c[5]}")
                         st.caption(f"📞 {c[3]} | 📍 {c[4]}")
                     with c2:
