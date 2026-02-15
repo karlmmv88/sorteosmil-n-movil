@@ -1336,8 +1336,8 @@ def main():
                                    f"Te recordamos amablemente que tienes un saldo pendiente de ${d['t_deuda']:.2f} "
                                    f"{txt_concepto}: {str_numeros}. Agradecemos tu pago. ¡Gracias! 🍀")
                             
-                            # Enlace directo a WhatsApp Web
-                            link = f"https://web.whatsapp.com/send?phone={tel_clean}&text={urllib.parse.quote(msg)}"
+                            # 3. ENLACE CORRECTO (wa.me)
+                            link = f"https://wa.me/{tel_clean}?text={urllib.parse.quote(msg)}"
                             
                             st.link_button("📲 Cobrar", link, use_container_width=True)
                             
@@ -1351,6 +1351,7 @@ if __name__ == "__main__":
         if verificar_inactividad():
             # 3. Si está activo, corremos la app
             main()
+
 
 
 
