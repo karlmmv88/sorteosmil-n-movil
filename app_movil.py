@@ -1325,18 +1325,21 @@ def main():
                  # Mensaje Plural o Singular
                         if tel and len(str(tel)) > 5:
                             tel_clean = "".join(filter(str.isdigit, str(tel)))
+                            # Ajuste de código de país
                             if len(tel_clean) == 10: tel_clean = "58" + tel_clean
                             elif len(tel_clean) == 11 and tel_clean.startswith("0"): tel_clean = "58" + tel_clean[1:]
                             
-                            # Definimos el concepto (Singular o Plural)
+                            # 1. Definimos el concepto (Soluciona el NameError)
                             txt_concepto = "de tus boletos" if len(lista_nums) > 1 else "de tu boleto"
                             
-                            # Creamos el mensaje usando la variable ya definida
+                            # 2. Creamos el mensaje
                             msg = (f"Hola {nom}, saludos de Sorteos Milán. "
                                    f"Te recordamos amablemente que tienes un saldo pendiente de ${d['t_deuda']:.2f} "
                                    f"{txt_concepto}: {str_numeros}. Agradecemos tu pago. ¡Gracias! 🍀")
                             
-                            link = f"https://web.whatsapp.com/send?phone={tel_clean}&text={urllib.parse.quote(msg)}"
+                            # 3. ENLACE UNIVERSAL (Soluciona el problema de la descarga)
+                            # Nota: 'web.whatsapp' falla en móviles. 'api.whatsapp' funciona en ambos.
+                            link = f"https://api.whatsapp.com/send?phone={tel_clean}&text={urllib.parse.quote(msg)}"
                             
                             st.link_button("📲 Cobrar", link, use_container_width=True)
                             
