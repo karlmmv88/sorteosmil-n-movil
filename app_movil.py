@@ -119,7 +119,7 @@ def get_whatsapp_link_exacto(telefono, boleto_num, estado, cliente_nom, sorteo_n
     )
     
     # --- CAMBIO AQUI: Usamos wa.me para abrir directo ---
-    return f"https://wa.me/{tel_clean}?text={urllib.parse.quote(mensaje)}"
+    return f"https://api.whatsapp.com/send?phone={tel_clean}&text={urllib.parse.quote(mensaje)}"
 
 # ============================================================================
 #  2. PDF DIGITAL (APP MÓVIL - MINÚSCULAS am/pm)
@@ -1007,7 +1007,7 @@ def main():
                             else: tel_final = tel_clean
                             
                             if len(tel_final) >= 7:
-                                link_wa = f"https://wa.me/{tel_final}?text={urllib.parse.quote(msg_wa)}"
+                                link_wa = f"https://api.whatsapp.com/send?phone={tel_final}&text={urllib.parse.quote(msg_wa)}"
                                 st.link_button("📲 WhatsApp", link_wa, use_container_width=True)
                             else:
                                 st.warning(f"Tel Inválido: {tel_raw}")
