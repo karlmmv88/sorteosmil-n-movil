@@ -1156,10 +1156,9 @@ def main():
         """
         rows_estado = run_query(sql_estado, (id_sorteo,))
 
-# -----------------------------------------------------------
+        # -----------------------------------------------------------
         # 2. OBTENER DATOS DE "HISTORIAL" (CORREGIDO)
         # -----------------------------------------------------------
-        # Pedimos orden ASCENDENTE (del más viejo al más nuevo) para numerarlos cronológicamente
         sql_hist = """
             SELECT 
                 fecha_registro,
@@ -1190,39 +1189,60 @@ def main():
             else:
                 pd.DataFrame(columns=["Mensaje"]).to_excel(writer, sheet_name='Estado General', index=False)
 
-            # --- HOJA 2: MOVIMIENTOS (CORREGIDA) ---
+            # --- HOJA 2: MOVIMIENTOS (CON CORRECCIONES DE HORA Y COLUMNAS) ---
             if rows_hist:
-                # 1. Creamos DataFrame con datos crudos
+                # 1. Creamos DataFrame
                 df_hist = pd.DataFrame(rows_hist, columns=["FechaRaw", "Usuario", "Acción", "Detalle", "MontoRaw"])
                 
-                # 2. Numeración de Transacción (1, 2, 3...)
-                # Como ordenamos por ID ASC en SQL, esto numera cronológicamente
+                # 2. Numeración de Transacción
                 df_hist.insert(0, "Nro. Transacción", range(1, len(df_hist) + 1))
                 
-                # 3. Separar Fecha y Hora
+                # 3. AJUSTE DE HORA Y FECHA (Resta 4 horas para zona horaria)
                 try:
-                    df_hist["FechaRaw"] = pd.to_datetime(df_hist["FechaRaw"])
+                    # Convertimos a datetime y restamos 4 horas
+                    df_hist["FechaRaw"] = pd.to_datetime(df_hist["FechaRaw"]) - pd.Timedelta(hours=4)
+                    
                     df_hist["Fecha"] = df_hist["FechaRaw"].dt.strftime('%d/%m/%Y')
-                    df_hist["Hora"] = df_hist["FechaRaw"].dt.strftime('%I:%M %p')
+                    df_hist["Hora"] = df_hist["FechaRaw"].dt.strftime('%I:%M %p') # Formato 12H (am/pm)
                 except:
                     df_hist["Fecha"] = df_hist["FechaRaw"].astype(str)
                     df_hist["Hora"] = ""
 
-                # 4. Formatear Monto (X.XX) forzando 2 decimales siempre
-                # Usamos float() para asegurar que es número y luego formateamos
+                # 4. SEPARAR BOLETOS Y CLIENTE
+                def separar_detalle(texto):
+                    # Formato esperado: "Boleto XX - NOMBRE CLIENTE | CODIGO"
+                    boleto = texto
+                    cliente = ""
+                    if " - " in str(texto):
+                        partes = str(texto).split(" - ", 1)
+                        boleto = partes[0].strip() # "Boleto XX"
+                        resto = partes[1].strip()  # "NOMBRE... | CODIGO"
+                        
+                        # Limpiamos el código si existe (lo que está después del |)
+                        if " | " in resto:
+                            cliente = resto.split(" | ")[0].strip()
+                        else:
+                            cliente = resto
+                    return pd.Series([boleto, cliente])
+
+                # Aplicamos la función para crear las dos columnas nuevas
+                df_hist[["Boletos", "Cliente"]] = df_hist["Detalle"].apply(separar_detalle)
+
+                # 5. Formatear Monto (X.XX)
                 df_hist["Monto ($)"] = df_hist["MontoRaw"].apply(lambda x: "{:.2f}".format(float(x) if x else 0.0))
                 
-                # 5. Seleccionar y Ordenar Columnas Finales
-                cols_finales = ["Nro. Transacción", "Fecha", "Hora", "Usuario", "Acción", "Detalle", "Monto ($)"]
+                # 6. Seleccionar y Ordenar Columnas Finales (Sin la columna "Detalle" vieja)
+                cols_finales = ["Nro. Transacción", "Fecha", "Hora", "Usuario", "Acción", "Boletos", "Cliente", "Monto ($)"]
                 df_export = df_hist[cols_finales]
                 
                 df_export.to_excel(writer, index=False, sheet_name='Historial Movimientos')
                 
-                # Ajuste visual de columnas (opcional, solo funciona con engine xlsxwriter)
+                # Ajuste visual de anchos de columna
                 worksheet = writer.sheets['Historial Movimientos']
-                worksheet.set_column('A:A', 15) # Ancho Nro
-                worksheet.set_column('B:C', 12) # Ancho Fechas
-                worksheet.set_column('F:F', 40) # Ancho Detalle
+                worksheet.set_column('A:A', 10) # Nro
+                worksheet.set_column('B:C', 12) # Fecha, Hora
+                worksheet.set_column('F:F', 15) # Boletos
+                worksheet.set_column('G:G', 40) # Cliente (más ancho)
                 
                 hay_datos = True
         
