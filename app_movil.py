@@ -1006,7 +1006,7 @@ def main():
                             else: tel_final = tel_clean
                             
                             if len(tel_final) >= 7:
-                                link_wa = f"whatsapp://send?phone={tel_final}&text={urllib.parse.quote(msg_wa)}"
+                                link = f"https://wa.me/{tel_clean}?text=Hola"
                                 st.link_button("📲 WhatsApp", link_wa, use_container_width=True)
                             else:
                                 st.warning(f"Tel Inválido: {tel_raw}")
@@ -1319,19 +1319,20 @@ def main():
                     with c_btn:
                         if tel and len(str(tel)) > 5:
                             tel_clean = "".join(filter(str.isdigit, str(tel)))
+                            # Ajuste de código de país para Venezuela
                             if len(tel_clean) == 10: tel_clean = "58" + tel_clean
                             elif len(tel_clean) == 11 and tel_clean.startswith("0"): tel_clean = "58" + tel_clean[1:]
                             
                             # 1. Definimos concepto (Soluciona el NameError)
                             txt_concepto = "de tus boletos" if len(lista_nums) > 1 else "de tu boleto"
                             
-                            # 2. Mensaje
+                            # 2. Mensaje formateado
                             msg = (f"Hola {nom}, saludos de Sorteos Milán. "
                                    f"Te recordamos amablemente que tienes un saldo pendiente de ${d['t_deuda']:.2f} "
                                    f"{txt_concepto}: {str_numeros}. Agradecemos tu pago. ¡Gracias! 🍀")
                             
-                            # 3. PROTOCOLO DIRECTO (whatsapp:// salta la página web)
-                            link = f"whatsapp://send?phone={tel_clean}&text={urllib.parse.quote(msg)}"
+                            # 3. Enlace oficial directo (wa.me) para evitar página de descarga
+                            link = f"https://wa.me/{tel_clean}?text={urllib.parse.quote(msg)}"
                             
                             st.link_button("📲 Cobrar", link, use_container_width=True)
                             
