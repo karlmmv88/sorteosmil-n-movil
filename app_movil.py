@@ -1007,12 +1007,11 @@ def main():
                             else: tel_final = tel_clean
                             
                             if len(tel_final) >= 7:
-                                # --- CORRECCIÓN: Usamos web.whatsapp.com igual que en Cobranza ---
-                                link_wa = f"https://web.whatsapp.com/send?phone={tel_final}&text={urllib.parse.quote(msg_wa)}"
+                                # ✅ CAMBIO A wa.me
+                                link_wa = f"https://wa.me/{tel_final}?text={urllib.parse.quote(msg_wa)}"
                                 st.link_button("📲 WhatsApp", link_wa, use_container_width=True)
                             else:
                                 st.warning(f"Tel Inválido: {tel_raw}")
-
                     else:
                         col_pdf.info("Selecciona para ver PDFs")
                         col_wa.button("📲 WhatsApp", disabled=True, use_container_width=True)
@@ -1352,5 +1351,6 @@ if __name__ == "__main__":
         if verificar_inactividad():
             # 3. Si está activo, corremos la app
             main()
+
 
 
