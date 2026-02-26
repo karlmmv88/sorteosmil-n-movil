@@ -540,7 +540,6 @@ def main():
         #  SELECTOR DE MODO Y DEFINICIÓN DE FORMATO
         # ------------------------------------------------------------------
         modo = st.radio("📍 Selecciona opción:", ["🔢 Por N° de Boleto", "👤 Por Cliente"], horizontal=True)
-        st.write("") 
         
         # 🔥 DEFINIMOS EL FORMATO AQUÍ PARA USARLO EN TODOS LADOS
         fmt_num = "{:02d}" if cantidad_boletos <= 100 else "{:03d}"
@@ -1291,3 +1290,4 @@ if __name__ == "__main__":
         if verificar_inactividad():
             # 3. Si está activo, corremos la app
             main()
+
