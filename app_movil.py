@@ -3,6 +3,7 @@ import psycopg2
 import io
 import os
 import time
+import math
 import urllib.parse
 import pandas as pd
 from datetime import datetime
@@ -489,6 +490,22 @@ def main():
     # ---------------- PESTAÑA VENTA ----------------
     with tab_venta:
         st.write("### 📊 Estado del Sorteo")
+
+        # 1. BOTONES DE DESCARGA (AHORA ARRIBA DE LA IMAGEN)
+        st.write("📥 **Descargar Tablas:**")
+        if cantidad_boletos <= 100:
+            c_d1, c_d2 = st.columns(2)
+            c_d1.download_button("⬇️ Con Ocupados", generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, 1), "01_Tabla_ConOcupados.jpg", "image/jpeg", use_container_width=True)
+            c_d2.download_button("⬇️ Solo Disponibles", generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, 2), "02_Tabla_SoloDisponibles.jpg", "image/jpeg", use_container_width=True)
+        else:
+            c_d1, c_d2, c_d3 = st.columns(3)
+            c_d1.download_button("⬇️ Ocupados", generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, 1), "01_Tabla_ConOcupados.jpg", "image/jpeg", use_container_width=True)
+            c_d2.download_button("⬇️ Limpia", generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, 2), "02_Tabla_SoloDisponibles.jpg", "image/jpeg", use_container_width=True)
+            c_d3.download_button("⬇️ Agrupada", generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, 3), "03_Tabla_Compacta.jpg", "image/jpeg", use_container_width=True)
+        
+        st.divider()
+
+        # 2. PREVISUALIZACIÓN EN VIVO (AHORA DEBAJO)
         ver_ocupados = st.checkbox("Mostrar Ocupados (Amarillo)", value=True)
         
         # Generar Imagen Preview
@@ -496,6 +513,7 @@ def main():
         img_bytes = generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, tipo_img=tipo_vista)
         st.image(img_bytes, caption="Actualizado en tiempo real", use_container_width=True)
         
+        # 3. Calcular Totales (Asignados y Dinero)
         try:
             datos_resumen = run_query("SELECT COUNT(*), SUM(precio) FROM boletos WHERE sorteo_id = %s", (id_sorteo,))
             t_asignados = 0
@@ -516,22 +534,10 @@ def main():
         except Exception as e:
             st.error(f"Error calculando totales: {e}")
 
-        # --- BOTONES DE DESCARGA ADAPTADOS A 100 y 1000 ---
-        st.write("📥 **Descargar Tablas:**")
-        if cantidad_boletos <= 100:
-            c_d1, c_d2 = st.columns(2)
-            c_d1.download_button("⬇️ Con Ocupados", generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, 1), "01_Tabla_ConOcupados.jpg", "image/jpeg", use_container_width=True)
-            c_d2.download_button("⬇️ Solo Disponibles", generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, 2), "02_Tabla_SoloDisponibles.jpg", "image/jpeg", use_container_width=True)
-        else:
-            c_d1, c_d2, c_d3 = st.columns(3)
-            c_d1.download_button("⬇️ Ocupados", generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, 1), "01_Tabla_ConOcupados.jpg", "image/jpeg", use_container_width=True)
-            c_d2.download_button("⬇️ Limpia", generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, 2), "02_Tabla_SoloDisponibles.jpg", "image/jpeg", use_container_width=True)
-            c_d3.download_button("⬇️ Agrupada", generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, 3), "03_Tabla_Compacta.jpg", "image/jpeg", use_container_width=True)
-        
         st.divider()
 
         # ------------------------------------------------------------------
-        #  SELECTOR DE MODO Y DEFINICIÓN DE FORMATO (GLOBAL PARA ESTA SECCIÓN)
+        #  SELECTOR DE MODO Y DEFINICIÓN DE FORMATO
         # ------------------------------------------------------------------
         modo = st.radio("📍 Selecciona opción:", ["🔢 Por N° de Boleto", "👤 Por Cliente"], horizontal=True)
         st.write("") 
