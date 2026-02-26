@@ -1,4 +1,3 @@
-
 import streamlit as st
 import psycopg2
 import io
@@ -1191,4 +1190,5 @@ if __name__ == "__main__":
         if verificar_inactividad():
             main()
 
-c
+
+
