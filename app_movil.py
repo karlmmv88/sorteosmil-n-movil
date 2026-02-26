@@ -310,50 +310,51 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
     return buffer
 
 # ============================================================================
-#  MOTOR DE REPORTES VISUALES (COPIA EXACTA DE BOLETOS.PY)
+#  MOTOR DE REPORTES VISUALES (ACTUALIZADO A LÓGICA DE PC)
 # ============================================================================
-def generar_imagen_reporte(id_sorteo, config_completa, cantidad_boletos, mostrar_ocupados=True):
+def generar_imagen_reporte(id_sorteo, config_completa, cantidad_boletos, tipo_img=1):
     """
-    Genera la imagen JPG replicando EXACTAMENTE la lógica de boletos.py.
-    Cambia la resolución y tamaño de fuente según si son 100 o 1000 boletos.
+    tipo_img: 1=Con Ocupados(Amarillo), 2=Solo Disponibles(Blancos), 3=Compacta(Agrupados)
     """
-    
-    # 1. CONFIGURACIÓN GEOMÉTRICA (Lógica idéntica a PC)
-    # ---------------------------------------------------------
     if cantidad_boletos <= 100:
-        # Modo 100: Lienzo más angosto y alto (2000x2500)
-        cols_img = 10
-        rows_img = 10
-        base_w = 2000
-        base_h = 2500
-        font_s_title = 80
-        font_s_info = 40
-        font_s_num = 60
+        cols_img = 10; rows_img = 10
+        base_w = 2000; base_h = 2500
+        font_s_title = 80; font_s_info = 40; font_s_num = 60
     else:
-        # Modo 1000: Lienzo ancho estándar (4000x3000)
-        cols_img = 25
-        rows_img = 40
-        base_w = 4000
-        base_h = 3000
-        font_s_title = 90
-        font_s_info = 42
-        font_s_num = 35
+        cols_img = 20; rows_img = 50 
+        base_w = 2700; base_h = 4800 # Formato 9:16 exacto
+        font_s_title = 100; font_s_info = 50; font_s_num = 45
     
     margin_px = 80
     header_h = 450
-    
-    # Cálculo de celdas CON ESPACIO (Padding de 4px como en PC)
     grid_pw = base_w - (2 * margin_px)
     grid_ph = base_h - (2 * margin_px) - header_h
     cell_pw = (grid_pw / cols_img) - 4 
     cell_ph = (grid_ph / rows_img) - 4
 
-    # 2. LIENZO Y FUENTES
-    # ---------------------------------------------------------
-    img = Image.new('RGB', (base_w, base_h), 'white')
+    boletos_ocupados = {}
+    ocupados_raw = run_query("SELECT numero, estado FROM boletos WHERE sorteo_id = %s", (id_sorteo,))
+    if ocupados_raw: 
+        boletos_ocupados = {row[0]: row[1] for row in ocupados_raw}
+
+    if cantidad_boletos >= 1000 and tipo_img == 3:
+        lista_mostrar = [i for i in range(cantidad_boletos) if boletos_ocupados.get(i, 'disponible') == 'disponible']
+        if not lista_mostrar: lista_mostrar = [0] 
+        
+        filas_necesarias = math.ceil(len(lista_mostrar) / cols_img)
+        alto_grid_nuevo = filas_necesarias * (cell_ph + 4)
+        alto_calculado = int(margin_px * 2 + header_h + alto_grid_nuevo)
+        
+        lienzo_h = max(2500, alto_calculado)
+        lienzo_w = base_w
+    else:
+        lista_mostrar = list(range(cantidad_boletos))
+        lienzo_w = base_w
+        lienzo_h = base_h
+
+    img = Image.new('RGB', (lienzo_w, lienzo_h), 'white')
     draw = ImageDraw.Draw(img)
     
-    # Fuentes (DejaVu es el equivalente a Arial en Linux/Streamlit)
     try:
         font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", font_s_title)
         font_info = ImageFont.truetype("DejaVuSans.ttf", font_s_info)
@@ -365,91 +366,74 @@ def generar_imagen_reporte(id_sorteo, config_completa, cantidad_boletos, mostrar
 
     rifa = config_completa['rifa']
     
-    # 3. DIBUJAR ENCABEZADO
-    # ---------------------------------------------------------
-    # Título Centrado
     titulo = rifa['nombre'].upper()
     bbox_t = draw.textbbox((0,0), titulo, font=font_title)
     tw_t = bbox_t[2] - bbox_t[0]
-    draw.text(((base_w - tw_t)/2, 60), titulo, fill='#1a73e8', font=font_title)
+    draw.text(((lienzo_w - tw_t)/2, 60), titulo, fill='#1a73e8', font=font_title)
     
-    # Columna Izquierda (Info)
     iy = 180
     draw.text((margin_px, iy), f"📅 Fecha: {datetime.now().strftime('%d/%m/%Y')}", fill='#555', font=font_info)
     iy += 60
-    # Fecha Sorteo
     txt_sorteo = f"🎲 Sorteo: {rifa.get('fecha_sorteo','')} {rifa.get('hora_sorteo','')}"
     draw.text((margin_px, iy), txt_sorteo, fill='#388E3C', font=font_info)
     iy += 60
-    # Precio
     draw.text((margin_px, iy), f"💵 Precio: {rifa.get('precio_boleto',0)} $", fill='#D32F2F', font=font_info)
     
-    # Columna Derecha (Premios)
-    # Ubicación exacta de PC: Ancho total - margen - 900px
-    px = base_w - margin_px - 900 
+    # AJUSTE HACIA EL CENTRO IGUAL A PC
+    if lienzo_w >= 2700:
+        px = lienzo_w - margin_px - 1350 
+    else:
+        px = lienzo_w - margin_px - 850
+        
     py = 180
     draw.text((px, py), "🏆 PREMIOS:", fill='#D32F2F', font=font_info)
     py += 60
     
     keys = ["premio1", "premio2", "premio3", "premio_extra1", "premio_extra2"]
-    lbls = ["1er:", "2do:", "3er:", "Ext:", "Ext:"]
+    lbls = ["🥇 1er:", "🥈 2do:", "🥉 3er:", "🎁 Extra 1:", "🎁 Extra 2:"]
     for k, l in zip(keys, lbls):
         val = rifa.get(k)
-        if val:
+        if val and val.strip():
             draw.text((px, py), f"{l} {val}", fill='black', font=font_info)
             py += 50
 
-    # 4. DIBUJAR GRILLA (Lógica Matemática de PC)
-    # ---------------------------------------------------------
-    # Obtener estados
-    boletos_ocupados = {}
-    ocupados_raw = run_query("SELECT numero, estado FROM boletos WHERE sorteo_id = %s", (id_sorteo,))
-    if ocupados_raw: 
-        boletos_ocupados = {row[0]: row[1] for row in ocupados_raw}
-        
     y_start = margin_px + header_h
     fmt = "{:02d}" if cantidad_boletos <= 100 else "{:03d}"
 
-    for i in range(cantidad_boletos):
-        r = i // cols_img
-        c = i % cols_img
+    for idx, num_real in enumerate(lista_mostrar):
+        r = idx // cols_img
+        c = idx % cols_img
         
-        # FÓRMULA EXACTA DE BOLETOS.PY PARA COORDENADAS
-        # x = margen + (columna * (ancho_celda + espacio))
         x = margin_px + (c * (cell_pw + 4))
         y = y_start + (r * (cell_ph + 4))
         
-        estado = boletos_ocupados.get(i, 'disponible')
+        estado = boletos_ocupados.get(num_real, 'disponible')
         ocupado = estado != 'disponible'
         
-        # Colores
         bg_color = 'white'
         texto_visible = True
         
-        if mostrar_ocupados:
-            if ocupado: bg_color = '#FFFF00' # Amarillo
-        else:
-            if ocupado: texto_visible = False # Borrar número (hueco blanco)
+        if tipo_img == 1:
+            if ocupado: bg_color = '#FFFF00' 
+        elif tipo_img == 2:
+            if ocupado: texto_visible = False 
+        elif tipo_img == 3:
+            pass 
         
-        # Dibujar Rectángulo
         draw.rectangle([x, y, x + cell_pw, y + cell_ph], fill=bg_color, outline='black', width=3)
         
-        # Dibujar Número Centrado
         if texto_visible:
-            txt = fmt.format(i)
-            
+            txt = fmt.format(num_real)
             bbox_n = draw.textbbox((0,0), txt, font=font_num)
             tw_n = bbox_n[2] - bbox_n[0]
             th_n = bbox_n[3] - bbox_n[1]
-            
-            # Centro matemático exacto
             tx = x + (cell_pw - tw_n) / 2
             ty = y + (cell_ph - th_n) / 2
-            
             draw.text((tx, ty), txt, fill='black', font=font_num)
             
     buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=95)
+    calidad = 95 if cantidad_boletos <= 100 else 90
+    img.save(buf, format="JPEG", quality=calidad)
     buf.seek(0)
     return buf
 
@@ -555,30 +539,23 @@ def main():
 
     # ---------------- PESTAÑA VENTA ----------------
     with tab_venta:
-        # --- SECCIÓN 1: VISUALIZACIÓN EN VIVO ---
         st.write("### 📊 Estado del Sorteo")
         ver_ocupados = st.checkbox("Mostrar Ocupados (Amarillo)", value=True)
         
-        # 1. Generar Imagen
-        img_bytes = generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, mostrar_ocupados=ver_ocupados)
+        # Generar Imagen Preview
+        tipo_vista = 1 if ver_ocupados else 2
+        img_bytes = generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, tipo_img=tipo_vista)
         st.image(img_bytes, caption="Actualizado en tiempo real", use_container_width=True)
         
-        # 2. Calcular Totales (Asignados y Dinero)
         try:
-            # Hacemos la consulta
             datos_resumen = run_query("SELECT COUNT(*), SUM(precio) FROM boletos WHERE sorteo_id = %s", (id_sorteo,))
-            
-            # Valores por defecto
             t_asignados = 0
             t_monto = 0.0
-            
-            # Si hay datos, los procesamos
             if datos_resumen and datos_resumen[0]:
                 fila = datos_resumen[0]
-                t_asignados = fila[0] or 0          # Cantidad (Count)
-                t_monto = float(fila[1] or 0.0)     # Suma Precio
+                t_asignados = fila[0] or 0         
+                t_monto = float(fila[1] or 0.0)    
             
-            # 3. Mostrar Resumen (Centrado y legible)
             st.markdown(
                 f"""
                 <div style="text-align: center; margin-top: -10px; margin-bottom: 15px; font-size: 15px;">
@@ -590,9 +567,17 @@ def main():
         except Exception as e:
             st.error(f"Error calculando totales: {e}")
 
-    # 4. Botón Descarga
-        nombre_archivo = "Tabla_ConOcupados.jpg" if ver_ocupados else "Tabla_Limpia.jpg"
-        st.download_button("⬇️ DESCARGAR IMAGEN", img_bytes, nombre_archivo, "image/jpeg", use_container_width=True)
+        # --- BOTONES DE DESCARGA ADAPTADOS A 100 y 1000 ---
+        st.write("📥 **Descargar Tablas:**")
+        if cantidad_boletos <= 100:
+            c_d1, c_d2 = st.columns(2)
+            c_d1.download_button("⬇️ Con Ocupados", generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, 1), "01_Tabla_ConOcupados.jpg", "image/jpeg", use_container_width=True)
+            c_d2.download_button("⬇️ Solo Disponibles", generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, 2), "02_Tabla_SoloDisponibles.jpg", "image/jpeg", use_container_width=True)
+        else:
+            c_d1, c_d2, c_d3 = st.columns(3)
+            c_d1.download_button("⬇️ Ocupados", generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, 1), "01_Tabla_ConOcupados.jpg", "image/jpeg", use_container_width=True)
+            c_d2.download_button("⬇️ Limpia", generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, 2), "02_Tabla_SoloDisponibles.jpg", "image/jpeg", use_container_width=True)
+            c_d3.download_button("⬇️ Agrupada", generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, 3), "03_Tabla_Compacta.jpg", "image/jpeg", use_container_width=True)
         
         st.divider()
 
@@ -1129,7 +1114,7 @@ def main():
                             st.session_state.edit_vals = c
                             st.rerun() # <--- IMPORTANTE: Fuerza la actualización inmediata
 
-# ---------------- PESTAÑA COBRANZA ----------------
+    # ---------------- PESTAÑA COBRANZA ----------------
     with tab_cobranza:
         st.header("📊 Gestión de Cobranza")
         
@@ -1351,7 +1336,3 @@ if __name__ == "__main__":
         if verificar_inactividad():
             # 3. Si está activo, corremos la app
             main()
-
-
-
-
