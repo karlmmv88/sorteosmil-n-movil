@@ -818,6 +818,28 @@ def main():
                         st.session_state.seleccion_actual = []
                         st.rerun()
 
+                    # --- NUEVO: SELECCIÓN RÁPIDA POR NÚMEROS ---
+                    st.caption("✏️ **Selección rápida por N°:**")
+                    c_inp, c_sel = st.columns([3, 1])
+                    nums_escritos = c_inp.text_input("Ej: 01, 03, 05", label_visibility="collapsed")
+                    
+                    if c_sel.button("Aplicar", use_container_width=True):
+                        if nums_escritos:
+                            # Reemplazamos comas y guiones por espacios para separar fácil
+                            texto_limpio = nums_escritos.replace(',', ' ').replace('-', ' ')
+                            nuevos_sel = []
+                            for p in texto_limpio.split():
+                                if p.strip().isdigit():
+                                    val = int(p.strip())
+                                    # Si el número pertenece a este cliente, lo seleccionamos
+                                    if val in todos_nums:
+                                        nuevos_sel.append(val)
+                            
+                            # Actualizamos la selección con los números encontrados
+                            st.session_state.seleccion_actual = nuevos_sel
+                            st.rerun()
+                    # -------------------------------------------
+
                     cols_sel = st.columns(5)
                     datos_boletos_map = {} 
 
@@ -1219,6 +1241,7 @@ if __name__ == "__main__":
     if check_password():
         if verificar_inactividad():
             main()
+
 
 
 
