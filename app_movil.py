@@ -366,7 +366,7 @@ def generar_imagen_reporte(id_sorteo, config_completa, cantidad_boletos, tipo_im
     if lienzo_w >= 2700:
         px = lienzo_w - margin_px - 1350
     else:
-        px = lienzo_w - margin_px - 1150
+        px = lienzo_w - margin_px - 1180
         
     py = 180
     draw.text((px, py), "🏆 PREMIOS:", fill='#D32F2F', font=font_info)
@@ -1219,6 +1219,7 @@ if __name__ == "__main__":
     if check_password():
         if verificar_inactividad():
             main()
+
 
 
 
