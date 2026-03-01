@@ -364,7 +364,7 @@ def generar_imagen_reporte(id_sorteo, config_completa, cantidad_boletos, tipo_im
     
     # AJUSTE HACIA EL CENTRO IGUAL A PC
     if lienzo_w >= 2700:
-        px = lienzo_w - margin_px - 1600 
+        px = lienzo_w - margin_px - 800
     else:
         px = lienzo_w - margin_px - 850
         
@@ -1219,5 +1219,6 @@ if __name__ == "__main__":
     if check_password():
         if verificar_inactividad():
             main()
+
 
 
