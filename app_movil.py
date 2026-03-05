@@ -821,7 +821,8 @@ def main():
                     # --- NUEVO: SELECCIÓN RÁPIDA POR NÚMEROS ---
                     st.caption("✏️ **Selección rápida por N°:**")
                     c_inp, c_sel = st.columns([3, 1])
-                    nums_escritos = c_inp.text_input("Ej: 01, 03, 05", label_visibility="collapsed")
+                    # Agregamos key=f"quick_{cid}" para que se limpie sola al cambiar de cliente
+                    nums_escritos = c_inp.text_input("Ej: 01, 03, 05", label_visibility="collapsed", key=f"quick_{cid}")
                     
                     if c_sel.button("Aplicar", use_container_width=True):
                         if nums_escritos:
@@ -1042,9 +1043,14 @@ def main():
         st.write("### 📋 Lista de Clientes")
         q = st.text_input("🔍 Buscar cliente (Nombre o Cédula)...", key="search_cli")
         sql = "SELECT id, nombre_completo, cedula, telefono, direccion, codigo FROM clientes"
-        if q: sql += f" WHERE nombre_completo ILIKE '%{q}%' OR cedula ILIKE '%{q}%'"
-        sql += " ORDER BY id DESC LIMIT 15"
-        res = run_query(sql)
+        
+        if q: 
+            sql += " WHERE nombre_completo ILIKE %s OR cedula ILIKE %s"
+            sql += " ORDER BY id DESC LIMIT 15"
+            res = run_query(sql, (f"%{q}%", f"%{q}%"))
+        else:
+            sql += " ORDER BY id DESC LIMIT 15"
+            res = run_query(sql)
         
         if res:
             for c in res:
@@ -1241,15 +1247,3 @@ if __name__ == "__main__":
     if check_password():
         if verificar_inactividad():
             main()
-
-
-
-
-
-
-
-
-
-
-
-
