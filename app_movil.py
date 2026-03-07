@@ -124,7 +124,39 @@ def get_whatsapp_link_exacto(telefono, boleto_num, estado, cliente_nom, sorteo_n
     return f"https://wa.me/{tel_clean}?text={urllib.parse.quote(mensaje)}"
 
 # ============================================================================
-#  2. PDF DIGITAL (APP MÓVIL)
+#  CALCULADORA DE TARIFAS
+# ============================================================================
+def calcular_total_pagar_escala(cantidad_boletos, config_rifa):
+    tarifas = []
+    if config_rifa.get('cant_p1') and config_rifa.get('prec_p1') and int(config_rifa['cant_p1']) > 0:
+        c = int(config_rifa['cant_p1'])
+        tarifas.append((c, float(config_rifa['prec_p1']) / c))
+    if config_rifa.get('cant_p2') and config_rifa.get('prec_p2') and int(config_rifa['cant_p2']) > 0:
+        c = int(config_rifa['cant_p2'])
+        tarifas.append((c, float(config_rifa['prec_p2']) / c))
+    if config_rifa.get('cant_p3') and config_rifa.get('prec_p3') and int(config_rifa['cant_p3']) > 0:
+        c = int(config_rifa['cant_p3'])
+        tarifas.append((c, float(config_rifa['prec_p3']) / c))
+        
+    if not tarifas:
+        precio_base = float(config_rifa.get('precio_boleto') or 0)
+        return cantidad_boletos * precio_base
+
+    tarifas.sort(key=lambda x: x[0], reverse=True)
+    precio_unitario_aplicado = None
+    
+    for cant_minima, precio_unit_promo in tarifas:
+        if cantidad_boletos >= cant_minima:
+            precio_unitario_aplicado = precio_unit_promo
+            break
+            
+    if precio_unitario_aplicado is None:
+        precio_unitario_aplicado = tarifas[-1][1]
+        
+    return cantidad_boletos * precio_unitario_aplicado
+
+# ============================================================================
+#  PDF DIGITAL (APP MÓVIL)
 # ============================================================================
 def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_boletos=1000):
     buffer = io.BytesIO()
@@ -147,7 +179,7 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
 
     lista_claves = ["premio1", "premio2", "premio3", "premio_extra1", "premio_extra2"]
     count_premios = sum(1 for k in lista_claves if rifa.get(k))
-    total_h = 390 + max(0, (count_premios - 3) * 20)
+    total_h = 440 + max(0, (count_premios - 3) * 20)
     total_w = 390
     
     c = canvas.Canvas(buffer, pagesize=(total_w, total_h))
@@ -191,9 +223,9 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
     y -= 8
     c.line(m_izq, y, m_der, y) 
     
-    y_start = y - 20
+    y_start = y - 25
     col_izq_x = m_izq
-    col_der_x = centro - 5 
+    col_der_x = centro - 10 
     
     y = y_start
     c.setFont("Helvetica-Bold", 10); c.drawString(col_izq_x, y, "SORTEO:")
@@ -204,7 +236,23 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
     hora_sorteo = str(rifa.get('hora_sorteo','')).lower()
     c.drawString(col_izq_x + 50, y, f"{rifa.get('fecha_sorteo','')} {hora_sorteo}")
     
+    # 🔥 NUEVO: DIBUJAR TARIFAS EN PDF MÓVIL
+    y -= 25
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(col_izq_x, y, "TARIFAS:")
+    y -= 12
+    c.setFont("Helvetica", 9)
+    if rifa.get('cant_p1') and rifa.get('prec_p1'):
+        c.drawString(col_izq_x, y, f"• {rifa['cant_p1']} x ${float(rifa['prec_p1']):,.2f}")
+        y -= 12
+    if rifa.get('cant_p2') and rifa.get('prec_p2'):
+        c.drawString(col_izq_x, y, f"• {rifa['cant_p2']} x ${float(rifa['prec_p2']):,.2f}")
+        y -= 12
+    if rifa.get('cant_p3') and rifa.get('prec_p3'):
+        c.drawString(col_izq_x, y, f"• {rifa['cant_p3']} x ${float(rifa['prec_p3']):,.2f}")
+    
     y_prem = y_start
+    c.setFont("Helvetica-Bold", 10)
     c.drawString(col_der_x, y_prem, "PREMIOS:")
     y_prem -= 12; c.setFont("Helvetica", 9)
     etiquetas = ["Triple A:", "Triple B:", "Triple Z:", "Especial 1:", "Especial 2:"]
@@ -216,7 +264,7 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
             y_prem -= 12
     
     y_fin_arriba = min(y, y_prem)
-    y_linea = y_fin_arriba - 3
+    y_linea = y_fin_arriba - 20 # 🔥 Separación de la línea dorada
     
     c.setLineWidth(1)
     c.setStrokeColorRGB(0.70, 0.55, 0.35) 
@@ -1247,3 +1295,4 @@ if __name__ == "__main__":
     if check_password():
         if verificar_inactividad():
             main()
+
