@@ -366,11 +366,13 @@ def generar_imagen_reporte(id_sorteo, config_completa, cantidad_boletos, tipo_im
     if cantidad_boletos <= 100:
         cols_img = 10; rows_img = 10
         base_w = 2000; base_h = 2500
-        font_s_title = 130; font_s_info = 75; font_s_num = 100 
+        # 🔥 TAMAÑOS ESTÁNDAR (IGUAL A PC)
+        font_s_title = 80; font_s_info = 40; font_s_num = 60 
     else:
         cols_img = 25; rows_img = 40
         base_w = 4000; base_h = 3000
-        font_s_title = 150; font_s_info = 80; font_s_num = 65 
+        # 🔥 TAMAÑOS ESTÁNDAR (IGUAL A PC)
+        font_s_title = 100; font_s_info = 50; font_s_num = 45
     
     margin_px = 80
     header_h = 450
@@ -401,46 +403,49 @@ def generar_imagen_reporte(id_sorteo, config_completa, cantidad_boletos, tipo_im
 
     img = Image.new('RGB', (lienzo_w, lienzo_h), 'white')
     draw = ImageDraw.Draw(img)
-    
-    # 🔥 SOLUCIÓN DEFINITIVA: Uso de la fuente fija en memoria
+
+    # 🔥 CARGA DE FUENTE FIJA (Mantener este bloque que ya funciona)
     font_title = cargar_fuente_fija(font_s_title, is_bold=True)
     font_info = cargar_fuente_fija(font_s_info, is_bold=False)
     font_num = cargar_fuente_fija(font_s_num, is_bold=True)
 
     rifa = config_completa['rifa']
     
+    # 3. DIBUJAR ENCABEZADO
+    # ---------------------------------------------------------
     titulo = rifa['nombre'].upper()
     bbox_t = draw.textbbox((0,0), titulo, font=font_title)
     tw_t = bbox_t[2] - bbox_t[0]
     draw.text(((lienzo_w - tw_t)/2, 60), titulo, fill='#1a73e8', font=font_title)
     
-    iy = 240
+    # --- COLUMNA IZQUIERDA (Info y Precios) ---
+    iy = 180 # 🔥 Ajustado para que no choque con el título
     draw.text((margin_px, iy), f"📅 Fecha: {datetime.now().strftime('%d/%m/%Y')}", fill='#555', font=font_info)
-    iy += 90 
+    iy += 60 
     txt_sorteo = f"🎲 Sorteo: {rifa.get('fecha_sorteo','')} {rifa.get('hora_sorteo','')}"
     draw.text((margin_px, iy), txt_sorteo, fill='#388E3C', font=font_info)
-    iy += 95
+    iy += 65
     draw.text((margin_px, iy), "💰 PRECIOS:", fill='#D32F2F', font=font_info)
     
-    iy += 80
+    iy += 55
     if rifa.get('cant_p1') and rifa.get('prec_p1'):
         draw.text((margin_px + 30, iy), f"• {rifa['cant_p1']} x ${float(rifa['prec_p1']):,.2f}", fill='black', font=font_info)
-        iy += 80
+        iy += 50
     if rifa.get('cant_p2') and rifa.get('prec_p2'):
         draw.text((margin_px + 30, iy), f"• {rifa['cant_p2']} x ${float(rifa['prec_p2']):,.2f}", fill='black', font=font_info)
-        iy += 80
+        iy += 50
     if rifa.get('cant_p3') and rifa.get('prec_p3'):
         draw.text((margin_px + 30, iy), f"• {rifa['cant_p3']} x ${float(rifa['prec_p3']):,.2f}", fill='black', font=font_info)
-        iy += 80
     
+    # --- COLUMNA DERECHA (Premios) ---
     if lienzo_w >= 2700:
         px = lienzo_w - margin_px - 1350
     else:
         px = lienzo_w - margin_px - 1180
         
-    py = 240
+    py = 180 # 🔥 Ahora arranca a la misma altura que la columna izquierda
     draw.text((px, py), "🏆 PREMIOS:", fill='#D32F2F', font=font_info)
-    py += 90
+    py += 60
     
     keys = ["premio1", "premio2", "premio3", "premio_extra1", "premio_extra2"]
     lbls = ["🥇 1er:", "🥈 2do:", "🥉 3er:", "🎁 Extra 1:", "🎁 Extra 2:"]
@@ -448,9 +453,11 @@ def generar_imagen_reporte(id_sorteo, config_completa, cantidad_boletos, tipo_im
         val = rifa.get(k)
         if val and val.strip():
             draw.text((px, py), f"{l} {val}", fill='black', font=font_info)
-            py += 80
+            py += 50
 
-    y_start = margin_px + header_h + 50
+    # 4. DIBUJAR GRILLA (Lógica Matemática de PC)
+    # ---------------------------------------------------------
+    y_start = margin_px + header_h # 🔥 Restaurado a su posición original
     fmt = "{:02d}" if cantidad_boletos <= 100 else "{:03d}"
 
     for idx, num_real in enumerate(lista_mostrar):
