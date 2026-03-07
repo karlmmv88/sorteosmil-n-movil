@@ -350,11 +350,11 @@ def generar_imagen_reporte(id_sorteo, config_completa, cantidad_boletos, tipo_im
     if cantidad_boletos <= 100:
         cols_img = 10; rows_img = 10
         base_w = 2000; base_h = 2500
-        font_s_title = 80; font_s_info = 40; font_s_num = 60
+        font_s_title = 130; font_s_info = 75; font_s_num = 100 
     else:
-        cols_img = 20; rows_img = 50 
-        base_w = 2700; base_h = 4800 # Formato 9:16 exacto
-        font_s_title = 100; font_s_info = 50; font_s_num = 45
+        cols_img = 25; rows_img = 40
+        base_w = 4000; base_h = 3000
+        font_s_title = 150; font_s_info = 80; font_s_num = 65
     
     margin_px = 80
     header_h = 450
@@ -387,28 +387,30 @@ def generar_imagen_reporte(id_sorteo, config_completa, cantidad_boletos, tipo_im
     draw = ImageDraw.Draw(img)
     
     try:
-        font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", font_s_title)
-        font_info = ImageFont.truetype("DejaVuSans.ttf", font_s_info)
-        font_num = ImageFont.truetype("DejaVuSans-Bold.ttf", font_s_num)
+        font_title = ImageFont.truetype("arialbd.ttf", font_s_title)
+        font_info = ImageFont.truetype("arial.ttf", font_s_info)
+        font_num = ImageFont.truetype("arialbd.ttf", font_s_num)
     except:
-        font_title = ImageFont.load_default()
-        font_info = ImageFont.load_default()
-        font_num = ImageFont.load_default()
+        try:
+            # Opción B: Fuentes estándar de Linux/Streamlit
+            font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", font_s_title)
+            font_info = ImageFont.truetype("DejaVuSans.ttf", font_s_info)
+            font_num = ImageFont.truetype("DejaVuSans-Bold.ttf", font_s_num)
+        except:
+            # Fallback final (Esto es lo que causa el tamaño pequeño si falla lo anterior)
+            font_title = ImageFont.load_default()
+            font_info = ImageFont.load_default()
+            font_num = ImageFont.load_default()
 
-    rifa = config_completa['rifa']
-    
-    titulo = rifa['nombre'].upper()
-    bbox_t = draw.textbbox((0,0), titulo, font=font_title)
-    tw_t = bbox_t[2] - bbox_t[0]
-    draw.text(((lienzo_w - tw_t)/2, 60), titulo, fill='#1a73e8', font=font_title)
-    
-    iy = 180
+    # --- AJUSTE DE POSICIÓN PARA FUENTES GRANDES ---
+    iy = 240 # Bajamos los textos para que no se monten en el título
     draw.text((margin_px, iy), f"📅 Fecha: {datetime.now().strftime('%d/%m/%Y')}", fill='#555', font=font_info)
-    iy += 60
+    iy += 90 
     txt_sorteo = f"🎲 Sorteo: {rifa.get('fecha_sorteo','')} {rifa.get('hora_sorteo','')}"
     draw.text((margin_px, iy), txt_sorteo, fill='#388E3C', font=font_info)
-    iy += 65
+    iy += 95
     draw.text((margin_px, iy), "💰 PRECIOS:", fill='#D32F2F', font=font_info)
+    
     iy += 55
     if rifa.get('cant_p1') and rifa.get('prec_p1'):
         draw.text((margin_px + 30, iy), f"• {rifa['cant_p1']} x ${float(rifa['prec_p1']):,.2f}", fill='black', font=font_info)
@@ -1317,4 +1319,5 @@ if __name__ == "__main__":
     if check_password():
         if verificar_inactividad():
             main()
+
 
