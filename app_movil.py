@@ -407,8 +407,18 @@ def generar_imagen_reporte(id_sorteo, config_completa, cantidad_boletos, tipo_im
     iy += 60
     txt_sorteo = f"🎲 Sorteo: {rifa.get('fecha_sorteo','')} {rifa.get('hora_sorteo','')}"
     draw.text((margin_px, iy), txt_sorteo, fill='#388E3C', font=font_info)
-    iy += 60
-    draw.text((margin_px, iy), f"💵 Precio: {rifa.get('precio_boleto',0)} $", fill='#D32F2F', font=font_info)
+    iy += 65
+    draw.text((margin_px, iy), "💰 PRECIOS:", fill='#D32F2F', font=font_info)
+    iy += 55
+    if rifa.get('cant_p1') and rifa.get('prec_p1'):
+        draw.text((margin_px + 30, iy), f"• {rifa['cant_p1']} x ${float(rifa['prec_p1']):,.2f}", fill='black', font=font_info)
+        iy += 50
+    if rifa.get('cant_p2') and rifa.get('prec_p2'):
+        draw.text((margin_px + 30, iy), f"• {rifa['cant_p2']} x ${float(rifa['prec_p2']):,.2f}", fill='black', font=font_info)
+        iy += 50
+    if rifa.get('cant_p3') and rifa.get('prec_p3'):
+        draw.text((margin_px + 30, iy), f"• {rifa['cant_p3']} x ${float(rifa['prec_p3']):,.2f}", fill='black', font=font_info)
+        iy += 50
     
     # AJUSTE HACIA EL CENTRO IGUAL A PC
     if lienzo_w >= 2700:
@@ -500,7 +510,7 @@ def main():
 
     st.title("📱 Sorteos Milán")
 
-    sorteos = run_query("SELECT id, nombre, precio_boleto, fecha_sorteo, hora_sorteo, premio1, premio2, premio3, premio_extra1, premio_extra2 FROM sorteos WHERE activo = TRUE")
+    sorteos = run_query("SELECT id, nombre, precio_boleto, fecha_sorteo, hora_sorteo, premio1, premio2, premio3, premio_extra1, premio_extra2, cant_promo1, precio_promo1, cant_promo2, precio_promo2, cant_promo3, precio_promo3 FROM sorteos WHERE activo = TRUE")
     config_rows = run_query("SELECT clave, valor FROM configuracion")
     
     if not sorteos: st.warning("No hay sorteos activos."); return
@@ -547,8 +557,11 @@ def main():
     st.caption(f"⚙️ Modo detectado: {cantidad_boletos} boletos")
 
     rifa_config = {
-        "nombre": nombre_s, "precio_boleto": precio_s, "fecha_sorteo": str(fecha_s), "hora_sorteo": str(s_data[4]),
-        "premio1": s_data[5], "premio2": s_data[6], "premio3": s_data[7], "premio_extra1": s_data[8], "premio_extra2": s_data[9]
+        "nombre": nombre_s, "precio_boleto": precio_s, "fecha_sorteo": str(fecha_s), "hora_sorteo": str(hora_s),
+        "premio1": s_data[5], "premio2": s_data[6], "premio3": s_data[7], "premio_extra1": s_data[8], "premio_extra2": s_data[9],
+        "cant_p1": s_data[10], "prec_p1": s_data[11],
+        "cant_p2": s_data[12], "prec_p2": s_data[13],
+        "cant_p3": s_data[14], "prec_p3": s_data[15]
     }
     config_full = {'rifa': rifa_config, 'empresa': empresa_config}
     
@@ -737,20 +750,24 @@ def main():
                         else:
                             with st.form("venta_single"):
                                 st.write(f"### 📝 Vender Boleto {str_num}")
+                                
+                                # 🔥 Calcula precio unitario con la promo
+                                precio_a_cobrar = calcular_total_pagar_escala(1, rifa_config)
+                                
                                 clientes = run_query("SELECT id, nombre_completo, codigo FROM clientes ORDER BY nombre_completo")
                                 opc_cli = {f"{c[1]} | {c[2] or 'S/C'}": c[0] for c in clientes} if clientes else {}
                                 nom_sel = st.selectbox("👤 Cliente:", options=list(opc_cli.keys()), index=None)
                                 
                                 c_ab, c_pr = st.columns(2)
                                 abono = c_ab.number_input("Abono Inicial ($)", value=0.0) 
-                                c_pr.metric("Precio", f"${precio_s}")
+                                c_pr.metric("Precio Unitario", f"${precio_a_cobrar:,.2f}")
                                 
                                 if st.form_submit_button("💾 ASIGNAR", use_container_width=True):
                                     if nom_sel:
                                         cid = opc_cli[nom_sel]
-                                        est = 'pagado' if abono >= precio_s else 'abonado'
+                                        est = 'pagado' if abono >= precio_a_cobrar else 'abonado'
                                         if abono == 0: est = 'apartado'
-                                        run_query("INSERT INTO boletos (sorteo_id, numero, estado, precio, cliente_id, total_abonado, fecha_asignacion) VALUES (%s, %s, %s, %s, %s, %s, NOW())", (id_sorteo, numero, est, precio_s, cid, abono), fetch=False)
+                                        run_query("INSERT INTO boletos (sorteo_id, numero, estado, precio, cliente_id, total_abonado, fecha_asignacion) VALUES (%s, %s, %s, %s, %s, %s, NOW())", (id_sorteo, numero, est, precio_a_cobrar, cid, abono), fetch=False)
                                         log_movimiento(id_sorteo, 'ASIGNACION', f"Boleto {str_num} - {nom_sel}", abono)
                                         st.success("✅ Asignado"); time.sleep(1); st.rerun()
                                     else: st.error("⚠️ Falta cliente")
@@ -766,29 +783,34 @@ def main():
                             st.success(f"🟢 {len(lista_busqueda)} boletos disponibles.")
                             
                             with st.form("venta_multi"):
-                                st.write(f"### 📝 Asignar: {lista_fmt}")
-                                clientes = run_query("SELECT id, nombre_completo, codigo FROM clientes ORDER BY nombre_completo")
-                                opc_cli = {}
-                                if clientes:
-                                    for c in clientes:
-                                        cod_d = c[2] if c[2] else "S/C"
-                                        opc_cli[f"{c[1]} | {cod_d}"] = c[0]
+                                st.write(f"### 📝 Asignar {len(lista_busqueda)} boletos")
                                 
+                                # 🔥 Calcula precio del paquete y unitario
+                                cantidad_venta = len(lista_busqueda)
+                                total_paquete = calcular_total_pagar_escala(cantidad_venta, rifa_config)
+                                precio_unitario = total_paquete / cantidad_venta if cantidad_venta > 0 else 0
+                                
+                                clientes = run_query("SELECT id, nombre_completo, codigo FROM clientes ORDER BY nombre_completo")
+                                opc_cli = {f"{c[1]} | {c[2] or 'S/C'}": c[0] for c in clientes} if clientes else {}
                                 nom_sel = st.selectbox("👤 Cliente:", options=list(opc_cli.keys()), index=None)
+                                
                                 st.divider()
                                 c_ab, c_pr = st.columns(2)
-                                abono_unit = c_ab.number_input("Abono por Boleto ($)", value=0.0, min_value=0.0, step=1.0)
-                                total_operacion = abono_unit * len(lista_busqueda)
-                                c_pr.metric("Total a Pagar", f"${total_operacion:,.2f}")
+                                # Ahora pedimos el abono total, es más fácil para el usuario
+                                abono_total = c_ab.number_input("Abono TOTAL ($)", value=0.0, min_value=0.0, max_value=float(total_paquete), step=1.0)
+                                c_pr.metric("Total a Pagar (Promo)", f"${total_paquete:,.2f}")
                                 
                                 if st.form_submit_button("💾 ASIGNAR TODOS", use_container_width=True):
                                     if nom_sel:
                                         cid = opc_cli[nom_sel]
-                                        est = 'pagado' if abono_unit >= precio_s else 'abonado'
-                                        if abono_unit == 0: est = 'apartado'
+                                        abono_unitario = abono_total / cantidad_venta if cantidad_venta > 0 else 0
+                                        est = 'pagado' if abono_total >= total_paquete else 'abonado'
+                                        if abono_total == 0: est = 'apartado'
+                                        
                                         for n_bol in lista_busqueda:
-                                            run_query("INSERT INTO boletos (sorteo_id, numero, estado, precio, cliente_id, total_abonado, fecha_asignacion) VALUES (%s, %s, %s, %s, %s, %s, NOW())", (id_sorteo, n_bol, est, precio_s, cid, abono_unit), fetch=False)
-                                            log_movimiento(id_sorteo, 'ASIGNACION_MASIVA', f"Boleto {fmt_num.format(n_bol)} - {nom_sel}", abono_unit)
+                                            run_query("INSERT INTO boletos (sorteo_id, numero, estado, precio, cliente_id, total_abonado, fecha_asignacion) VALUES (%s, %s, %s, %s, %s, %s, NOW())", (id_sorteo, n_bol, est, precio_unitario, cid, abono_unitario), fetch=False)
+                                        
+                                        log_movimiento(id_sorteo, 'ASIGNACION_MASIVA', f"{cantidad_venta} Boletos - {nom_sel}", abono_total)
                                         st.success("✅ Asignados"); time.sleep(1); st.rerun()
                                     else: st.error("⚠️ Selecciona un cliente.")
 
