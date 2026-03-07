@@ -3,6 +3,7 @@ import psycopg2
 import io
 import os
 import time
+import math
 import urllib.parse
 import pandas as pd
 from datetime import datetime
@@ -40,7 +41,6 @@ def run_query(query, params=None, fetch=True):
                 conn.commit()
                 return True
     except Exception as e:
-        # 🔥 ESTA LÍNEA ES LA SOLUCIÓN:
         conn.rollback() 
         st.error(f"Error SQL: {e}")
         return None
@@ -49,58 +49,60 @@ def run_query(query, params=None, fetch=True):
 #  HELPER: REGISTRO DE HISTORIAL
 # ============================================================================
 def log_movimiento(sorteo_id, accion, detalle, monto):
-    # CAMBIA 'fecha_registro' POR EL NOMBRE QUE TENGAS EN TU BASE DE DATOS (ej: 'fecha')
     sql = """
-        INSERT INTO historial (sorteo_id, usuario, accion, detalle, monto, fecha_registro)
+        INSERT INTO historial (sorteo_id, usuario, accion, detalle, monto, fecha_hora)
         VALUES (%s, 'MOVIL', %s, %s, %s, NOW())
     """
     run_query(sql, (sorteo_id, accion, detalle, monto), fetch=False)
     
 # ============================================================================
-#  CONTROL DE INACTIVIDAD (5 MINUTOS)
+#  CONTROL DE INACTIVIDAD (10 MINUTOS)
 # ============================================================================
 def verificar_inactividad():
-    # Tiempo límite en segundos (5 minutos * 60 segundos = 300)
-    TIMEOUT_SEGUNDOS = 300 
-    
-    # Obtenemos la hora actual
+    TIMEOUT_SEGUNDOS = 600 
     now = time.time()
-    
-    # Si ya existe un registro de última actividad
     if 'ultima_actividad' in st.session_state:
         tiempo_transcurrido = now - st.session_state['ultima_actividad']
-        
-        # Si pasó más tiempo del permitido
         if tiempo_transcurrido > TIMEOUT_SEGUNDOS:
-            st.warning("⚠️ Sesión cerrada por inactividad (5 min).")
-            # Borramos la autenticación
+            st.warning("⚠️ Sesión cerrada por inactividad (10 min).")
             st.session_state["password_correct"] = False
-            # Borramos el registro de tiempo
             del st.session_state['ultima_actividad']
-            time.sleep(2) # Damos tiempo para leer el mensaje
-            st.rerun() # Recargamos la página para ir al Login
+            time.sleep(2)
+            st.rerun()
             return False
-
-    # Si hay movimiento, actualizamos la hora a "ahora mismo"
     st.session_state['ultima_actividad'] = now
     return True
 
 # ============================================================================
-#  1. FORMATO DE WHATSAPP (Global - Con Emoji, Hora y Soporte Extranjero)
+#  FUNCIONES DE APOYO Y WHATSAPP (Móvil)
 # ============================================================================
+def formato_fecha_inteligente(fecha_str):
+    """Convierte una fecha DD/MM/YYYY a Hoy, Mañana o 'del sábado'"""
+    if not fecha_str or "Pendiente" in fecha_str or "Sin" in fecha_str:
+        return f"del día {fecha_str}"
+    try:
+        if "/" in fecha_str:
+            d_obj = datetime.strptime(fecha_str, "%d/%m/%Y").date()
+        else:
+            d_obj = datetime.strptime(fecha_str, "%Y-%m-%d").date()
+        
+        hoy = datetime.now().date()
+        delta = (d_obj - hoy).days
+        
+        if delta == 0: return "de hoy"
+        elif delta == 1: return "de Mañana"
+        else:
+            dias = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+            return f"del {dias[d_obj.weekday()]}"
+    except:
+        return f"del día {fecha_str}"
+
 def get_whatsapp_link_exacto(telefono, boleto_num, estado, cliente_nom, sorteo_nom, fecha_sorteo, hora_sorteo, cantidad_boletos=1000):
     if not telefono: return ""
-    
-    # Limpieza básica
     tel_clean = "".join(filter(str.isdigit, str(telefono)))
+    if len(tel_clean) == 10: tel_clean = "58" + tel_clean
+    elif len(tel_clean) == 11 and tel_clean.startswith("0"): tel_clean = "58" + tel_clean[1:]
     
-    # Lógica Venezuela
-    if len(tel_clean) == 10: 
-        tel_clean = "58" + tel_clean
-    elif len(tel_clean) == 11 and tel_clean.startswith("0"): 
-        tel_clean = "58" + tel_clean[1:]
-    
-    # Formateo de Estado
     est_str = estado.upper()
     if estado == 'pagado': est_str = "PAGADO"
     elif estado == 'abonado': est_str = "ABONADO"
@@ -108,20 +110,53 @@ def get_whatsapp_link_exacto(telefono, boleto_num, estado, cliente_nom, sorteo_n
     
     fmt_num = "{:02d}" if cantidad_boletos <= 100 else "{:03d}"
     num_str = fmt_num.format(boleto_num)
-    
     texto_boleto = f"N° {num_str} ({est_str})"
     
-    # Mensaje con Emoji 🍀 y Hora
+    # Aplicar fecha inteligente
+    txt_fecha = formato_fecha_inteligente(fecha_sorteo)
+    
+    # Se añade el strip() para evitar el error de los asteriscos
     mensaje = (
         f"Hola. Saludos, somos Sorteos Milán!!, aquí te enviamos el comprobante de tu "
-        f"BOLETO: {texto_boleto}, a nombre de {cliente_nom} para el sorteo "
-        f"'{sorteo_nom}' del día {fecha_sorteo} a las {hora_sorteo}. ¡Suerte!🍀"
+        f"BOLETO: {texto_boleto}, a nombre de {cliente_nom.strip()} para el sorteo "
+        f"'{sorteo_nom}' {txt_fecha} a las {hora_sorteo}. ¡Suerte!🍀"
     )
-    
-    return f"https://api.whatsapp.com/send?phone={tel_clean}&text={urllib.parse.quote(mensaje)}"
+    return f"https://wa.me/{tel_clean}?text={urllib.parse.quote(mensaje)}"
 
 # ============================================================================
-#  2. PDF DIGITAL (APP MÓVIL - MINÚSCULAS am/pm)
+#  CALCULADORA DE TARIFAS
+# ============================================================================
+def calcular_total_pagar_escala(cantidad_boletos, config_rifa):
+    tarifas = []
+    if config_rifa.get('cant_p1') and config_rifa.get('prec_p1') and int(config_rifa['cant_p1']) > 0:
+        c = int(config_rifa['cant_p1'])
+        tarifas.append((c, float(config_rifa['prec_p1']) / c))
+    if config_rifa.get('cant_p2') and config_rifa.get('prec_p2') and int(config_rifa['cant_p2']) > 0:
+        c = int(config_rifa['cant_p2'])
+        tarifas.append((c, float(config_rifa['prec_p2']) / c))
+    if config_rifa.get('cant_p3') and config_rifa.get('prec_p3') and int(config_rifa['cant_p3']) > 0:
+        c = int(config_rifa['cant_p3'])
+        tarifas.append((c, float(config_rifa['prec_p3']) / c))
+        
+    if not tarifas:
+        precio_base = float(config_rifa.get('precio_boleto') or 0)
+        return cantidad_boletos * precio_base
+
+    tarifas.sort(key=lambda x: x[0], reverse=True)
+    precio_unitario_aplicado = None
+    
+    for cant_minima, precio_unit_promo in tarifas:
+        if cantidad_boletos >= cant_minima:
+            precio_unitario_aplicado = precio_unit_promo
+            break
+            
+    if precio_unitario_aplicado is None:
+        precio_unitario_aplicado = tarifas[-1][1]
+        
+    return cantidad_boletos * precio_unitario_aplicado
+
+# ============================================================================
+#  PDF DIGITAL (APP MÓVIL)
 # ============================================================================
 def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_boletos=1000):
     buffer = io.BytesIO()
@@ -131,7 +166,6 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
     fmt_num = "{:02d}" if cantidad_boletos <= 100 else "{:03d}"
     num_str = fmt_num.format(numero_boleto)
     
-    # Datos
     nom_cli = datos_completos.get('cliente', '')
     cedula = datos_completos.get('cedula', '')
     tel = datos_completos.get('telefono', '')
@@ -143,10 +177,9 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
     saldo = precio - abonado
     fecha_asig = datos_completos.get('fecha_asignacion', '')
 
-    # Altura dinámica
     lista_claves = ["premio1", "premio2", "premio3", "premio_extra1", "premio_extra2"]
     count_premios = sum(1 for k in lista_claves if rifa.get(k))
-    total_h = 390 + max(0, (count_premios - 3) * 20)
+    total_h = 440 + max(0, (count_premios - 3) * 20)
     total_w = 390
     
     c = canvas.Canvas(buffer, pagesize=(total_w, total_h))
@@ -154,7 +187,6 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
     centro = total_w / 2
     y = total_h - 30
     
-    # LOGO
     logo_files = ["logo.jpg", "logo.png", "logo.jpeg"]
     for f in logo_files:
         if os.path.exists(f):
@@ -163,7 +195,6 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
                 break
             except: pass
 
-    # Encabezado Texto
     c.setFont("Helvetica-Bold", 12)
     c.drawString(m_izq + 50, y, empresa.get('nombre', 'SORTEOS MILÁN'))
     c.setFont("Helvetica", 8)
@@ -175,12 +206,10 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
     c.drawRightString(m_der, y-5, f"BOLETO N° {num_str}")
     c.setFillColorRGB(0,0,0)
     
-    # 🔥 CAMBIO 1: Fecha de emisión en minúsculas
     fecha_emision = datetime.now().strftime('%d/%m/%Y %I:%M %p').lower()
     c.setFont("Helvetica-Oblique", 8)
     c.drawRightString(m_der, y-25, f"Emitido: {fecha_emision}")
     
-    # --- HEADER: LÍNEAS DORADAS ---
     y -= 35
     c.setStrokeColorRGB(0.70, 0.55, 0.35)
     c.line(m_izq, y, m_der, y)
@@ -194,10 +223,9 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
     y -= 8
     c.line(m_izq, y, m_der, y) 
     
-    # Datos Sorteo
-    y_start = y - 20
+    y_start = y - 25
     col_izq_x = m_izq
-    col_der_x = centro - 5 
+    col_der_x = centro - 10 
     
     y = y_start
     c.setFont("Helvetica-Bold", 10); c.drawString(col_izq_x, y, "SORTEO:")
@@ -205,12 +233,26 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
     y -= 15
     c.drawString(col_izq_x, y, "FECHA:")
     
-    # 🔥 CAMBIO 2: Hora del sorteo en minúsculas
     hora_sorteo = str(rifa.get('hora_sorteo','')).lower()
     c.drawString(col_izq_x + 50, y, f"{rifa.get('fecha_sorteo','')} {hora_sorteo}")
     
-    # Premios
+    # 🔥 NUEVO: DIBUJAR TARIFAS EN PDF MÓVIL
+    y -= 25
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(col_izq_x, y, "TARIFAS:")
+    y -= 12
+    c.setFont("Helvetica", 9)
+    if rifa.get('cant_p1') and rifa.get('prec_p1'):
+        c.drawString(col_izq_x, y, f"• {rifa['cant_p1']} x ${float(rifa['prec_p1']):,.2f}")
+        y -= 12
+    if rifa.get('cant_p2') and rifa.get('prec_p2'):
+        c.drawString(col_izq_x, y, f"• {rifa['cant_p2']} x ${float(rifa['prec_p2']):,.2f}")
+        y -= 12
+    if rifa.get('cant_p3') and rifa.get('prec_p3'):
+        c.drawString(col_izq_x, y, f"• {rifa['cant_p3']} x ${float(rifa['prec_p3']):,.2f}")
+    
     y_prem = y_start
+    c.setFont("Helvetica-Bold", 10)
     c.drawString(col_der_x, y_prem, "PREMIOS:")
     y_prem -= 12; c.setFont("Helvetica", 9)
     etiquetas = ["Triple A:", "Triple B:", "Triple Z:", "Especial 1:", "Especial 2:"]
@@ -221,9 +263,8 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
             c.drawString(col_der_x, y_prem, f"{lbl} {val[:30]}")
             y_prem -= 12
     
-    # --- SECCIÓN CLIENTE ---
     y_fin_arriba = min(y, y_prem)
-    y_linea = y_fin_arriba - 3
+    y_linea = y_fin_arriba - 20 # 🔥 Separación de la línea dorada
     
     c.setLineWidth(1)
     c.setStrokeColorRGB(0.70, 0.55, 0.35) 
@@ -245,7 +286,6 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
     
     c.line(m_izq, y, m_der, y) 
     
-    # --- SECCIÓN PAGOS ---
     y_final = y - 20
     x_div = total_w * 0.55
     c.line(x_div, y_final + 5, x_div, y_final - 55)
@@ -259,32 +299,25 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
     c.drawString(m_izq, y, f"Saldo Pendiente: ${saldo:,.2f}")
     y -= 18; c.setFont("Helvetica", 8)
     
-    # --- CAMBIO: FECHA NORMAL (12H) Y MINÚSCULAS ---
     f_reg_str = ""
     try:
         if fecha_asig:
-            # Opción A: Si ya es un objeto de fecha (datetime)
             if hasattr(fecha_asig, 'strftime'):
                 f_reg_str = fecha_asig.strftime('%d/%m/%Y %I:%M:%S %p').lower()
-            # Opción B: Si es texto (string), intentamos convertirlo
             else:
                 try:
-                    # Limpiamos decimales si los tiene y convertimos
                     fecha_limpia = str(fecha_asig).split('.')[0] 
                     dt_obj = datetime.strptime(fecha_limpia, '%Y-%m-%d %H:%M:%S')
                     f_reg_str = dt_obj.strftime('%d/%m/%Y %I:%M:%S %p').lower()
                 except:
-                    # Si falla la conversión, mostramos lo que haya en minúsculas
                     f_reg_str = str(fecha_asig).lower()
         else:
-            # Si no hay fecha, usamos la actual
             f_reg_str = datetime.now().strftime('%d/%m/%Y %I:%M:%S %p').lower()
     except Exception:
         f_reg_str = str(fecha_asig).lower()
 
     c.drawString(m_izq, y, f"Fecha de registro: {f_reg_str}")
     
-    # Estado
     y_est = y_final
     centro_der = x_div + ((m_der - x_div) / 2)
     c.setFont("Helvetica-Bold", 10); c.setFillColorRGB(0, 0, 0)
@@ -293,7 +326,6 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
     c.drawCentredString(centro_der, y_est - 30, estado_fmt)
     c.setFillColorRGB(0, 0, 0)
     
-    # --- FOOTER ---
     y -= 25
     c.setStrokeColorRGB(0.7, 0.7, 0.7) 
     c.setLineWidth(0.5)
@@ -309,146 +341,152 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
     return buffer
 
 # ============================================================================
-#  MOTOR DE REPORTES VISUALES (COPIA EXACTA DE BOLETOS.PY)
+#  FUENTE FIJA GARANTIZADA (EN MEMORIA)
 # ============================================================================
-def generar_imagen_reporte(id_sorteo, config_completa, cantidad_boletos, mostrar_ocupados=True):
+@st.cache_resource
+def cargar_fuente_fija(size, is_bold=False):
+    import urllib.request
+    import io
+    try:
+        # Descarga la fuente Roboto oficial directamente a la memoria RAM del servidor
+        url = "https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Bold.ttf" if is_bold else "https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Regular.ttf"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        res = urllib.request.urlopen(req, timeout=5)
+        return ImageFont.truetype(io.BytesIO(res.read()), size)
+    except:
+        return ImageFont.load_default()
+
+# ============================================================================
+#  MOTOR DE REPORTES VISUALES (ACTUALIZADO A LÓGICA DE PC)
+# ============================================================================
+def generar_imagen_reporte(id_sorteo, config_completa, cantidad_boletos, tipo_img=1):
     """
-    Genera la imagen JPG replicando EXACTAMENTE la lógica de boletos.py.
-    Cambia la resolución y tamaño de fuente según si son 100 o 1000 boletos.
+    tipo_img: 1=Con Ocupados(Amarillo), 2=Solo Disponibles(Blancos), 3=Compacta(Agrupados)
     """
-    
-    # 1. CONFIGURACIÓN GEOMÉTRICA (Lógica idéntica a PC)
-    # ---------------------------------------------------------
     if cantidad_boletos <= 100:
-        # Modo 100: Lienzo más angosto y alto (2000x2500)
-        cols_img = 10
-        rows_img = 10
-        base_w = 2000
-        base_h = 2500
-        font_s_title = 80
-        font_s_info = 40
-        font_s_num = 60
+        cols_img = 10; rows_img = 10
+        base_w = 2000; base_h = 2500
+        font_s_title = 130; font_s_info = 75; font_s_num = 100 
     else:
-        # Modo 1000: Lienzo ancho estándar (4000x3000)
-        cols_img = 25
-        rows_img = 40
-        base_w = 4000
-        base_h = 3000
-        font_s_title = 90
-        font_s_info = 42
-        font_s_num = 35
+        cols_img = 25; rows_img = 40
+        base_w = 4000; base_h = 3000
+        font_s_title = 150; font_s_info = 80; font_s_num = 65 
     
     margin_px = 80
     header_h = 450
-    
-    # Cálculo de celdas CON ESPACIO (Padding de 4px como en PC)
     grid_pw = base_w - (2 * margin_px)
     grid_ph = base_h - (2 * margin_px) - header_h
     cell_pw = (grid_pw / cols_img) - 4 
     cell_ph = (grid_ph / rows_img) - 4
 
-    # 2. LIENZO Y FUENTES
-    # ---------------------------------------------------------
-    img = Image.new('RGB', (base_w, base_h), 'white')
-    draw = ImageDraw.Draw(img)
-    
-    # Fuentes (DejaVu es el equivalente a Arial en Linux/Streamlit)
-    try:
-        font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", font_s_title)
-        font_info = ImageFont.truetype("DejaVuSans.ttf", font_s_info)
-        font_num = ImageFont.truetype("DejaVuSans-Bold.ttf", font_s_num)
-    except:
-        font_title = ImageFont.load_default()
-        font_info = ImageFont.load_default()
-        font_num = ImageFont.load_default()
-
-    rifa = config_completa['rifa']
-    
-    # 3. DIBUJAR ENCABEZADO
-    # ---------------------------------------------------------
-    # Título Centrado
-    titulo = rifa['nombre'].upper()
-    bbox_t = draw.textbbox((0,0), titulo, font=font_title)
-    tw_t = bbox_t[2] - bbox_t[0]
-    draw.text(((base_w - tw_t)/2, 60), titulo, fill='#1a73e8', font=font_title)
-    
-    # Columna Izquierda (Info)
-    iy = 180
-    draw.text((margin_px, iy), f"📅 Fecha: {datetime.now().strftime('%d/%m/%Y')}", fill='#555', font=font_info)
-    iy += 60
-    # Fecha Sorteo
-    txt_sorteo = f"🎲 Sorteo: {rifa.get('fecha_sorteo','')} {rifa.get('hora_sorteo','')}"
-    draw.text((margin_px, iy), txt_sorteo, fill='#388E3C', font=font_info)
-    iy += 60
-    # Precio
-    draw.text((margin_px, iy), f"💵 Precio: {rifa.get('precio_boleto',0)} $", fill='#D32F2F', font=font_info)
-    
-    # Columna Derecha (Premios)
-    # Ubicación exacta de PC: Ancho total - margen - 900px
-    px = base_w - margin_px - 900 
-    py = 180
-    draw.text((px, py), "🏆 PREMIOS:", fill='#D32F2F', font=font_info)
-    py += 60
-    
-    keys = ["premio1", "premio2", "premio3", "premio_extra1", "premio_extra2"]
-    lbls = ["1er:", "2do:", "3er:", "Ext:", "Ext:"]
-    for k, l in zip(keys, lbls):
-        val = rifa.get(k)
-        if val:
-            draw.text((px, py), f"{l} {val}", fill='black', font=font_info)
-            py += 50
-
-    # 4. DIBUJAR GRILLA (Lógica Matemática de PC)
-    # ---------------------------------------------------------
-    # Obtener estados
     boletos_ocupados = {}
     ocupados_raw = run_query("SELECT numero, estado FROM boletos WHERE sorteo_id = %s", (id_sorteo,))
     if ocupados_raw: 
         boletos_ocupados = {row[0]: row[1] for row in ocupados_raw}
+
+    if cantidad_boletos >= 1000 and tipo_img == 3:
+        lista_mostrar = [i for i in range(cantidad_boletos) if boletos_ocupados.get(i, 'disponible') == 'disponible']
+        if not lista_mostrar: lista_mostrar = [0] 
         
-    y_start = margin_px + header_h
+        filas_necesarias = math.ceil(len(lista_mostrar) / cols_img)
+        alto_grid_nuevo = filas_necesarias * (cell_ph + 4)
+        alto_calculado = int(margin_px * 2 + header_h + alto_grid_nuevo)
+        
+        lienzo_h = max(2500, alto_calculado)
+        lienzo_w = base_w
+    else:
+        lista_mostrar = list(range(cantidad_boletos))
+        lienzo_w = base_w
+        lienzo_h = base_h
+
+    img = Image.new('RGB', (lienzo_w, lienzo_h), 'white')
+    draw = ImageDraw.Draw(img)
+    
+    # 🔥 SOLUCIÓN DEFINITIVA: Uso de la fuente fija en memoria
+    font_title = cargar_fuente_fija(font_s_title, is_bold=True)
+    font_info = cargar_fuente_fija(font_s_info, is_bold=False)
+    font_num = cargar_fuente_fija(font_s_num, is_bold=True)
+
+    rifa = config_completa['rifa']
+    
+    titulo = rifa['nombre'].upper()
+    bbox_t = draw.textbbox((0,0), titulo, font=font_title)
+    tw_t = bbox_t[2] - bbox_t[0]
+    draw.text(((lienzo_w - tw_t)/2, 60), titulo, fill='#1a73e8', font=font_title)
+    
+    iy = 240
+    draw.text((margin_px, iy), f"📅 Fecha: {datetime.now().strftime('%d/%m/%Y')}", fill='#555', font=font_info)
+    iy += 90 
+    txt_sorteo = f"🎲 Sorteo: {rifa.get('fecha_sorteo','')} {rifa.get('hora_sorteo','')}"
+    draw.text((margin_px, iy), txt_sorteo, fill='#388E3C', font=font_info)
+    iy += 95
+    draw.text((margin_px, iy), "💰 PRECIOS:", fill='#D32F2F', font=font_info)
+    
+    iy += 80
+    if rifa.get('cant_p1') and rifa.get('prec_p1'):
+        draw.text((margin_px + 30, iy), f"• {rifa['cant_p1']} x ${float(rifa['prec_p1']):,.2f}", fill='black', font=font_info)
+        iy += 80
+    if rifa.get('cant_p2') and rifa.get('prec_p2'):
+        draw.text((margin_px + 30, iy), f"• {rifa['cant_p2']} x ${float(rifa['prec_p2']):,.2f}", fill='black', font=font_info)
+        iy += 80
+    if rifa.get('cant_p3') and rifa.get('prec_p3'):
+        draw.text((margin_px + 30, iy), f"• {rifa['cant_p3']} x ${float(rifa['prec_p3']):,.2f}", fill='black', font=font_info)
+        iy += 80
+    
+    if lienzo_w >= 2700:
+        px = lienzo_w - margin_px - 1350
+    else:
+        px = lienzo_w - margin_px - 1180
+        
+    py = 240
+    draw.text((px, py), "🏆 PREMIOS:", fill='#D32F2F', font=font_info)
+    py += 90
+    
+    keys = ["premio1", "premio2", "premio3", "premio_extra1", "premio_extra2"]
+    lbls = ["🥇 1er:", "🥈 2do:", "🥉 3er:", "🎁 Extra 1:", "🎁 Extra 2:"]
+    for k, l in zip(keys, lbls):
+        val = rifa.get(k)
+        if val and val.strip():
+            draw.text((px, py), f"{l} {val}", fill='black', font=font_info)
+            py += 80
+
+    y_start = margin_px + header_h + 50
     fmt = "{:02d}" if cantidad_boletos <= 100 else "{:03d}"
 
-    for i in range(cantidad_boletos):
-        r = i // cols_img
-        c = i % cols_img
+    for idx, num_real in enumerate(lista_mostrar):
+        r = idx // cols_img
+        c = idx % cols_img
         
-        # FÓRMULA EXACTA DE BOLETOS.PY PARA COORDENADAS
-        # x = margen + (columna * (ancho_celda + espacio))
         x = margin_px + (c * (cell_pw + 4))
         y = y_start + (r * (cell_ph + 4))
         
-        estado = boletos_ocupados.get(i, 'disponible')
+        estado = boletos_ocupados.get(num_real, 'disponible')
         ocupado = estado != 'disponible'
         
-        # Colores
         bg_color = 'white'
         texto_visible = True
         
-        if mostrar_ocupados:
-            if ocupado: bg_color = '#FFFF00' # Amarillo
-        else:
-            if ocupado: texto_visible = False # Borrar número (hueco blanco)
+        if tipo_img == 1:
+            if ocupado: bg_color = '#FFFF00' 
+        elif tipo_img == 2:
+            if ocupado: texto_visible = False 
+        elif tipo_img == 3:
+            pass 
         
-        # Dibujar Rectángulo
         draw.rectangle([x, y, x + cell_pw, y + cell_ph], fill=bg_color, outline='black', width=3)
         
-        # Dibujar Número Centrado
         if texto_visible:
-            txt = fmt.format(i)
-            
+            txt = fmt.format(num_real)
             bbox_n = draw.textbbox((0,0), txt, font=font_num)
             tw_n = bbox_n[2] - bbox_n[0]
             th_n = bbox_n[3] - bbox_n[1]
-            
-            # Centro matemático exacto
             tx = x + (cell_pw - tw_n) / 2
-            ty = y + (cell_ph - th_n) / 2
-            
+            ty = y + (cell_ph - th_n) / 2 - (th_n * 0.15)
             draw.text((tx, ty), txt, fill='black', font=font_num)
             
     buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=95)
+    calidad = 95 if cantidad_boletos <= 100 else 90
+    img.save(buf, format="JPEG", quality=calidad)
     buf.seek(0)
     return buf
 
@@ -456,20 +494,15 @@ def generar_imagen_reporte(id_sorteo, config_completa, cantidad_boletos, mostrar
 #  SISTEMA DE LOGIN
 # ============================================================================
 def check_password():
-    """Retorna True si el usuario ingresó la clave correcta."""
     if st.session_state.get("password_correct", False):
         return True
 
     st.markdown("### 🔐 Acceso Restringido")
-    
-    # --- CAMBIO: Usamos st.form para detectar la tecla ENTER ---
     with st.form("login_form"):
         pwd_input = st.text_input("Ingresa la contraseña:", type="password")
-        # El botón de submit se activa con Clic o ENTER en el campo de texto
         submit_btn = st.form_submit_button("Entrar")
     
     if submit_btn:
-        # Usa la clave de los Secrets o "admin123" por defecto si no existe
         clave_secreta = st.secrets.get("PASSWORD_APP", "admin123")
         if pwd_input == clave_secreta:
             st.session_state["password_correct"] = True
@@ -489,8 +522,7 @@ def main():
 
     st.title("📱 Sorteos Milán")
 
-    # Cargar Datos Generales
-    sorteos = run_query("SELECT id, nombre, precio_boleto, fecha_sorteo, hora_sorteo, premio1, premio2, premio3, premio_extra1, premio_extra2 FROM sorteos WHERE activo = TRUE")
+    sorteos = run_query("SELECT id, nombre, precio_boleto, fecha_sorteo, hora_sorteo, premio1, premio2, premio3, premio_extra1, premio_extra2, cant_promo1, precio_promo1, cant_promo2, precio_promo2, cant_promo3, precio_promo3 FROM sorteos WHERE activo = TRUE")
     config_rows = run_query("SELECT clave, valor FROM configuracion")
     
     if not sorteos: st.warning("No hay sorteos activos."); return
@@ -500,16 +532,14 @@ def main():
         cfg = {r[0]: r[1] for r in config_rows}
         empresa_config.update({k: v for k, v in cfg.items() if k in empresa_config})
 
-    # Selector Sorteo
+    # SELECTOR DE SORTEOS ACTIVOS
     opciones_sorteo = {s[1]: s for s in sorteos}
     nom_sorteo = st.selectbox("Sorteo Activo:", list(opciones_sorteo.keys()))
     
     if not nom_sorteo: return
     s_data = opciones_sorteo[nom_sorteo]
-    # Extraemos fecha y hora crudas
     id_sorteo, nombre_s, precio_s, fecha_raw, hora_raw = s_data[0], s_data[1], float(s_data[2] or 0), s_data[3], s_data[4]
     
-    # 1. Formatear Fecha (dd/mm/yyyy)
     try:
         fecha_s = fecha_raw.strftime('%d/%m/%Y')
     except:
@@ -519,16 +549,12 @@ def main():
         except:
             fecha_s = str(fecha_raw)
 
-    # 2. Formatear Hora (hh:mm pm)
     try:
-        # Intentamos convertir si viene como HH:MM:SS
         h_obj = datetime.strptime(str(hora_raw), '%H:%M:%S')
-        hora_s = h_obj.strftime('%I:%M %p').lower() # Ej: 04:45 pm
+        hora_s = h_obj.strftime('%I:%M %p').lower() 
     except:
-        # Si falla (ej: ya viene como texto "04:45 PM"), forzamos minúsculas
         hora_s = str(hora_raw).lower()
     
-    # 🔥 DETECCIÓN AUTOMÁTICA DE CANTIDAD
     cantidad_boletos = 1000
     if config_rows:
         cfg_dict = {r[0]: r[1] for r in config_rows}
@@ -540,44 +566,40 @@ def main():
             if max_bol and max_bol[0][0] is not None and max_bol[0][0] <= 99:
                 cantidad_boletos = 100
     
-    st.caption(f"⚙️ Modo: {cantidad_boletos} boletos")
+    st.caption(f"⚙️ Modo detectado: {cantidad_boletos} boletos")
 
-    # Objeto Rifa Global
     rifa_config = {
-        "nombre": nombre_s, "precio_boleto": precio_s, "fecha_sorteo": str(fecha_s), "hora_sorteo": str(s_data[4]),
-        "premio1": s_data[5], "premio2": s_data[6], "premio3": s_data[7], "premio_extra1": s_data[8], "premio_extra2": s_data[9]
+        "nombre": nombre_s, "precio_boleto": precio_s, "fecha_sorteo": str(fecha_s), "hora_sorteo": str(hora_s),
+        "premio1": s_data[5], "premio2": s_data[6], "premio3": s_data[7], "premio_extra1": s_data[8], "premio_extra2": s_data[9],
+        "cant_p1": s_data[10], "prec_p1": s_data[11],
+        "cant_p2": s_data[12], "prec_p2": s_data[13],
+        "cant_p3": s_data[14], "prec_p3": s_data[15]
     }
     config_full = {'rifa': rifa_config, 'empresa': empresa_config}
     
-    # CREACIÓN DE PESTAÑAS (Agregamos COBRANZA)
     tab_venta, tab_clientes, tab_cobranza = st.tabs(["🎫 VENTA", "👥 CLIENTES", "💰 COBRANZA"])
 
     # ---------------- PESTAÑA VENTA ----------------
     with tab_venta:
-        # --- SECCIÓN 1: VISUALIZACIÓN EN VIVO ---
         st.write("### 📊 Estado del Sorteo")
+        
+        # 1. PREVISUALIZACIÓN EN VIVO (ARRIBA)
         ver_ocupados = st.checkbox("Mostrar Ocupados (Amarillo)", value=True)
         
-        # 1. Generar Imagen
-        img_bytes = generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, mostrar_ocupados=ver_ocupados)
+        tipo_vista = 1 if ver_ocupados else 2
+        img_bytes = generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, tipo_img=tipo_vista)
         st.image(img_bytes, caption="Actualizado en tiempo real", use_container_width=True)
         
         # 2. Calcular Totales (Asignados y Dinero)
         try:
-            # Hacemos la consulta
             datos_resumen = run_query("SELECT COUNT(*), SUM(precio) FROM boletos WHERE sorteo_id = %s", (id_sorteo,))
-            
-            # Valores por defecto
             t_asignados = 0
             t_monto = 0.0
-            
-            # Si hay datos, los procesamos
             if datos_resumen and datos_resumen[0]:
                 fila = datos_resumen[0]
-                t_asignados = fila[0] or 0          # Cantidad (Count)
-                t_monto = float(fila[1] or 0.0)     # Suma Precio
+                t_asignados = fila[0] or 0         
+                t_monto = float(fila[1] or 0.0)    
             
-            # 3. Mostrar Resumen (Centrado y legible)
             st.markdown(
                 f"""
                 <div style="text-align: center; margin-top: -10px; margin-bottom: 15px; font-size: 15px;">
@@ -589,24 +611,28 @@ def main():
         except Exception as e:
             st.error(f"Error calculando totales: {e}")
 
-    # 4. Botón Descarga
-        nombre_archivo = "Tabla_ConOcupados.jpg" if ver_ocupados else "Tabla_Limpia.jpg"
-        st.download_button("⬇️ DESCARGAR IMAGEN", img_bytes, nombre_archivo, "image/jpeg", use_container_width=True)
+        # 3. BOTONES DE DESCARGA (DEBAJO DE LA IMAGEN)
+        st.write("📥 **Descargar Tablas:**")
+        if cantidad_boletos <= 100:
+            c_d1, c_d2 = st.columns(2)
+            c_d1.download_button("⬇️ Con Ocupados", generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, 1), "01_Tabla_ConOcupados.jpg", "image/jpeg", use_container_width=True)
+            c_d2.download_button("⬇️ Solo Disponibles", generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, 2), "02_Tabla_SoloDisponibles.jpg", "image/jpeg", use_container_width=True)
+        else:
+            c_d1, c_d2, c_d3 = st.columns(3)
+            c_d1.download_button("⬇️ Ocupados", generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, 1), "01_Tabla_ConOcupados.jpg", "image/jpeg", use_container_width=True)
+            c_d2.download_button("⬇️ Limpia", generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, 2), "02_Tabla_SoloDisponibles.jpg", "image/jpeg", use_container_width=True)
+            c_d3.download_button("⬇️ Agrupada", generar_imagen_reporte(id_sorteo, config_full, cantidad_boletos, 3), "03_Tabla_Compacta.jpg", "image/jpeg", use_container_width=True)
         
         st.divider()
 
         # ------------------------------------------------------------------
-        #  SELECTOR DE MODO Y DEFINICIÓN DE FORMATO (GLOBAL PARA ESTA SECCIÓN)
+        #  SELECTOR DE MODO Y DEFINICIÓN DE FORMATO
         # ------------------------------------------------------------------
         modo = st.radio("📍 Selecciona opción:", ["🔢 Por N° de Boleto", "👤 Por Cliente"], horizontal=True)
         st.write("") 
         
-        # 🔥 DEFINIMOS EL FORMATO AQUÍ PARA USARLO EN TODOS LADOS
         fmt_num = "{:02d}" if cantidad_boletos <= 100 else "{:03d}"
 
-        # ============================================================
-        #  MODO A: POR NÚMERO
-        # ============================================================
         if modo == "🔢 Por N° de Boleto":
             c1, c2 = st.columns([2,1])
             entrada_boletos = c1.text_input("Boleto(s) N° (Ej: 01, 25):", placeholder="Escribe números...")
@@ -626,7 +652,6 @@ def main():
                 if not lista_busqueda:
                     st.warning("Introduce un número válido.")
                 else:
-                    # 1. CONSULTA
                     lista_str = ",".join(map(str, lista_busqueda))
                     placeholders = ",".join(["%s"] * len(lista_busqueda))
                     
@@ -641,7 +666,6 @@ def main():
                     resultados_ocupados = run_query(query, tuple(params))
                     mapa_resultados = {r[0]: r for r in resultados_ocupados} if resultados_ocupados else {}
                     
-                    # A. PANEL VISUAL
                     st.write("### 🎫 Estado Actual")
                     cols_vis = st.columns(4)
                     
@@ -656,7 +680,6 @@ def main():
                         else:
                             bg_color = "#4CAF50"; txt_estado = "DISPONIBLE"
 
-                        # USAMOS fmt_num AQUÍ
                         html_card = f"""
                         <div style="background-color: {bg_color}; border-radius: 10px; padding: 15px; text-align: center; margin-bottom: 15px; color: white; box-shadow: 2px 2px 5px rgba(0,0,0,0.2);">
                             <div style="font-size: 24px; font-weight: bold; line-height: 1.2;">{fmt_num.format(num_buscado)}</div>
@@ -667,15 +690,11 @@ def main():
                     
                     st.divider()
 
-                    # ---------------------------------------------------------
-                    #  GESTIÓN INDIVIDUAL (1 Boleto)
-                    # ---------------------------------------------------------
                     if len(lista_busqueda) == 1:
                         numero = lista_busqueda[0]
                         str_num = fmt_num.format(numero)
 
                         if numero in mapa_resultados:
-                            # BOLETO OCUPADO
                             row = mapa_resultados[numero]
                             b_id, estado, b_precio, b_abonado, b_fecha = row[5], row[1], float(row[2]), float(row[3]), row[4]
                             c_nom, c_tel, c_ced, c_dir, c_cod = row[7], row[8], row[9], row[10], row[11]
@@ -687,18 +706,18 @@ def main():
                             if estado != 'pagado':
                                 if c_btn1.button("✅ PAGAR TOTAL", use_container_width=True, key="btn_pag_ind"):
                                     run_query("UPDATE boletos SET estado='pagado', total_abonado=%s WHERE id=%s", (b_precio, b_id), fetch=False)
-                                    log_movimiento(id_sorteo, 'PAGO_COMPLETO', f"Boleto {str_num} - {c_nom}", b_precio) # LOG
+                                    log_movimiento(id_sorteo, 'PAGO_COMPLETO', f"Boleto {str_num} - {c_nom}", b_precio)
                                     st.rerun()
 
                             if estado != 'apartado':
                                 if c_btn2.button("📌 APARTAR", use_container_width=True, key="btn_aprt"):
                                     run_query("UPDATE boletos SET estado='apartado', total_abonado=0 WHERE id=%s", (b_id,), fetch=False)
-                                    log_movimiento(id_sorteo, 'REVERTIR_APARTADO', f"Boleto {str_num} - {c_nom}", 0) # LOG
+                                    log_movimiento(id_sorteo, 'REVERTIR_APARTADO', f"Boleto {str_num} - {c_nom}", 0)
                                     st.success("Revertido a Apartado"); time.sleep(1); st.rerun()
 
                             if c_btn3.button("🗑️ LIBERAR", type="primary", use_container_width=True, key="btn_lib_ind"):
                                 run_query("DELETE FROM boletos WHERE id=%s", (b_id,), fetch=False)
-                                log_movimiento(id_sorteo, 'LIBERACION', f"Boleto {str_num} - {c_nom}", 0) # LOG
+                                log_movimiento(id_sorteo, 'LIBERACION', f"Boleto {str_num} - {c_nom}", 0)
                                 st.warning("Liberado"); time.sleep(1); st.rerun()
                             
                             if estado != 'pagado' and (b_precio - b_abonado) > 0.01:
@@ -712,33 +731,26 @@ def main():
                                             nt = b_abonado + monto_abono
                                             ne = 'pagado' if (b_precio - nt) <= 0.01 else 'abonado'
                                             run_query("UPDATE boletos SET total_abonado=%s, estado=%s WHERE id=%s", (nt, ne, b_id), fetch=False)
-                                            log_movimiento(id_sorteo, 'ABONO', f"Boleto {str_num} - {c_nom}", monto_abono) # LOG
+                                            log_movimiento(id_sorteo, 'ABONO', f"Boleto {str_num} - {c_nom}", monto_abono)
                                             st.success("✅ Abonado"); time.sleep(1); st.rerun()
                             
                             st.divider()
 
-                            # --- SECCIÓN PDF Y WHATSAPP ---
                             col_pdf, col_wa = st.columns([1, 1])
                             
-                            # 1. Lógica de Nombre
                             partes_nom = c_nom.strip().upper().split()
-                            if len(partes_nom) >= 3:
-                                nom_archivo = f"{partes_nom[0]}_{partes_nom[2]}"
-                            elif len(partes_nom) == 2:
-                                nom_archivo = f"{partes_nom[0]}_{partes_nom[1]}"
-                            else:
-                                nom_archivo = partes_nom[0]
+                            if len(partes_nom) >= 3: nom_archivo = f"{partes_nom[0]}_{partes_nom[2]}"
+                            elif len(partes_nom) == 2: nom_archivo = f"{partes_nom[0]}_{partes_nom[1]}"
+                            else: nom_archivo = partes_nom[0]
                             
                             n_file = f"{str_num} {nom_archivo} ({estado.upper()}).pdf"
 
-                            # 2. PDF (COLUMNA IZQUIERDA)
                             info_pdf = {'cliente': c_nom, 'cedula': c_ced, 'telefono': c_tel, 'direccion': c_dir, 'codigo_cli': c_cod, 'estado': estado, 'precio': b_precio, 'abonado': b_abonado, 'fecha_asignacion': b_fecha}
                             pdf_data = generar_pdf_memoria(numero, info_pdf, config_full, cantidad_boletos)
                             
                             with col_pdf:
                                 st.download_button(f"📄 PDF", pdf_data, n_file, "application/pdf", use_container_width=True)
 
-                            # 3. WhatsApp (COLUMNA DERECHA)
                             link_wa = get_whatsapp_link_exacto(c_tel, numero, estado, c_nom, nombre_s, str(fecha_s), str(hora_s), cantidad_boletos)
                             
                             with col_wa:
@@ -748,28 +760,30 @@ def main():
                                     st.warning("Sin teléfono")
 
                         else:
-                            # BOLETO DISPONIBLE
                             with st.form("venta_single"):
                                 st.write(f"### 📝 Vender Boleto {str_num}")
+                                
+                                # 🔥 Calcula precio unitario con la promo
+                                precio_a_cobrar = calcular_total_pagar_escala(1, rifa_config)
+                                
                                 clientes = run_query("SELECT id, nombre_completo, codigo FROM clientes ORDER BY nombre_completo")
                                 opc_cli = {f"{c[1]} | {c[2] or 'S/C'}": c[0] for c in clientes} if clientes else {}
                                 nom_sel = st.selectbox("👤 Cliente:", options=list(opc_cli.keys()), index=None)
                                 
                                 c_ab, c_pr = st.columns(2)
                                 abono = c_ab.number_input("Abono Inicial ($)", value=0.0) 
-                                c_pr.metric("Precio", f"${precio_s}")
+                                c_pr.metric("Precio Unitario", f"${precio_a_cobrar:,.2f}")
                                 
                                 if st.form_submit_button("💾 ASIGNAR", use_container_width=True):
                                     if nom_sel:
                                         cid = opc_cli[nom_sel]
-                                        est = 'pagado' if abono >= precio_s else 'abonado'
+                                        est = 'pagado' if abono >= precio_a_cobrar else 'abonado'
                                         if abono == 0: est = 'apartado'
-                                        run_query("INSERT INTO boletos (sorteo_id, numero, estado, precio, cliente_id, total_abonado, fecha_asignacion) VALUES (%s, %s, %s, %s, %s, %s, NOW())", (id_sorteo, numero, est, precio_s, cid, abono), fetch=False)
-                                        log_movimiento(id_sorteo, 'ASIGNACION', f"Boleto {str_num} - {nom_sel}", abono) # LOG
+                                        run_query("INSERT INTO boletos (sorteo_id, numero, estado, precio, cliente_id, total_abonado, fecha_asignacion) VALUES (%s, %s, %s, %s, %s, %s, NOW())", (id_sorteo, numero, est, precio_a_cobrar, cid, abono), fetch=False)
+                                        log_movimiento(id_sorteo, 'ASIGNACION', f"Boleto {str_num} - {nom_sel}", abono)
                                         st.success("✅ Asignado"); time.sleep(1); st.rerun()
                                     else: st.error("⚠️ Falta cliente")
                     
-                    # C. GESTIÓN MÚLTIPLE
                     elif len(lista_busqueda) > 1:
                         ocupados = [n for n in lista_busqueda if n in mapa_resultados]
                         if ocupados:
@@ -781,37 +795,38 @@ def main():
                             st.success(f"🟢 {len(lista_busqueda)} boletos disponibles.")
                             
                             with st.form("venta_multi"):
-                                st.write(f"### 📝 Asignar: {lista_fmt}")
-                                clientes = run_query("SELECT id, nombre_completo, codigo FROM clientes ORDER BY nombre_completo")
-                                opc_cli = {}
-                                if clientes:
-                                    for c in clientes:
-                                        cod_d = c[2] if c[2] else "S/C"
-                                        opc_cli[f"{c[1]} | {cod_d}"] = c[0]
+                                st.write(f"### 📝 Asignar {len(lista_busqueda)} boletos")
                                 
+                                # 🔥 Calcula precio del paquete y unitario
+                                cantidad_venta = len(lista_busqueda)
+                                total_paquete = calcular_total_pagar_escala(cantidad_venta, rifa_config)
+                                precio_unitario = total_paquete / cantidad_venta if cantidad_venta > 0 else 0
+                                
+                                clientes = run_query("SELECT id, nombre_completo, codigo FROM clientes ORDER BY nombre_completo")
+                                opc_cli = {f"{c[1]} | {c[2] or 'S/C'}": c[0] for c in clientes} if clientes else {}
                                 nom_sel = st.selectbox("👤 Cliente:", options=list(opc_cli.keys()), index=None)
+                                
                                 st.divider()
                                 c_ab, c_pr = st.columns(2)
-                                abono_unit = c_ab.number_input("Abono por Boleto ($)", value=0.0, min_value=0.0, step=1.0)
-                                total_operacion = abono_unit * len(lista_busqueda)
-                                c_pr.metric("Total a Pagar", f"${total_operacion:,.2f}")
+                                # Ahora pedimos el abono total, es más fácil para el usuario
+                                abono_total = c_ab.number_input("Abono TOTAL ($)", value=0.0, min_value=0.0, max_value=float(total_paquete), step=1.0)
+                                c_pr.metric("Total a Pagar (Promo)", f"${total_paquete:,.2f}")
                                 
                                 if st.form_submit_button("💾 ASIGNAR TODOS", use_container_width=True):
                                     if nom_sel:
                                         cid = opc_cli[nom_sel]
-                                        est = 'pagado' if abono_unit >= precio_s else 'abonado'
-                                        if abono_unit == 0: est = 'apartado'
+                                        abono_unitario = abono_total / cantidad_venta if cantidad_venta > 0 else 0
+                                        est = 'pagado' if abono_total >= total_paquete else 'abonado'
+                                        if abono_total == 0: est = 'apartado'
+                                        
                                         for n_bol in lista_busqueda:
-                                            run_query("INSERT INTO boletos (sorteo_id, numero, estado, precio, cliente_id, total_abonado, fecha_asignacion) VALUES (%s, %s, %s, %s, %s, %s, NOW())", (id_sorteo, n_bol, est, precio_s, cid, abono_unit), fetch=False)
-                                            log_movimiento(id_sorteo, 'ASIGNACION_MASIVA', f"Boleto {fmt_num.format(n_bol)} - {nom_sel}", abono_unit) # LOG
+                                            run_query("INSERT INTO boletos (sorteo_id, numero, estado, precio, cliente_id, total_abonado, fecha_asignacion) VALUES (%s, %s, %s, %s, %s, %s, NOW())", (id_sorteo, n_bol, est, precio_unitario, cid, abono_unitario), fetch=False)
+                                        
+                                        log_movimiento(id_sorteo, 'ASIGNACION_MASIVA', f"{cantidad_venta} Boletos - {nom_sel}", abono_total)
                                         st.success("✅ Asignados"); time.sleep(1); st.rerun()
                                     else: st.error("⚠️ Selecciona un cliente.")
 
-        # ============================================================
-        #  MODO B: POR CLIENTE
-        # ============================================================
         else:
-            # 1. Buscador de Clientes
             clientes_con_boletos = run_query("""
                 SELECT DISTINCT c.id, c.nombre_completo, c.telefono, c.cedula, c.direccion, c.codigo
                 FROM clientes c
@@ -848,25 +863,26 @@ def main():
                 
                 if boletos_cli:
                     st.info(f"📋 Gestionando boletos de: **{datos_c['nombre']}**")
-                    fmt_num = "{:02d}" if cantidad_boletos <= 100 else "{:03d}"
 
-                    # A. PANEL VISUAL
                     st.write("### 🎫 Estado Actual")
                     cols_info = st.columns(4) 
                     for i, b in enumerate(boletos_cli):
                         num, est = b[0], b[1]
+                        
                         if est == 'abonado': bg = "#1a73e8"
                         elif est == 'apartado': bg = "#FFC107"
                         else: bg = "#9e9e9e"
                         
-                        html_card = f"""<div style="background-color: {bg}; border-radius: 10px; padding: 10px; text-align: center; margin-bottom: 10px; color: white; font-weight: bold;">
-                            <span style="font-size: 20px;">{fmt_num.format(num)}</span><br><span style="font-size: 10px;">{est.upper()}</span>
-                        </div>"""
+                        html_card = f"""
+                        <div style="background-color: {bg}; border-radius: 10px; padding: 15px; text-align: center; margin-bottom: 15px; color: white; box-shadow: 2px 2px 5px rgba(0,0,0,0.2);">
+                            <div style="font-size: 24px; font-weight: bold; line-height: 1.2;">{fmt_num.format(num)}</div>
+                            <div style="font-size: 14px; text-transform: uppercase; margin-top: 5px; opacity: 0.9;">{est.upper()}</div>
+                        </div>
+                        """
                         with cols_info[i % 4]: st.markdown(html_card, unsafe_allow_html=True)
                     
                     st.divider()
 
-                    # B. PANEL DE SELECCIÓN
                     st.write("### ✅ Toca para procesar:")
                     
                     if 'seleccion_actual' not in st.session_state: st.session_state.seleccion_actual = []
@@ -874,7 +890,6 @@ def main():
                         st.session_state.seleccion_actual = [] 
                         st.session_state.cliente_previo = cid
 
-                    # --- BOTONES DE SELECCIÓN MASIVA ---
                     todos_nums = [b[0] for b in boletos_cli]
                     c_todos, c_nada = st.columns(2)
                     if c_todos.button("✅ Marcar Todos", use_container_width=True, key="btn_all"):
@@ -885,7 +900,29 @@ def main():
                         st.session_state.seleccion_actual = []
                         st.rerun()
 
-                    # --- GRILLA DE BOTONES INDIVIDUALES ---
+                    # --- NUEVO: SELECCIÓN RÁPIDA POR NÚMEROS ---
+                    st.caption("✏️ **Selección rápida por N°:**")
+                    c_inp, c_sel = st.columns([3, 1])
+                    # Agregamos key=f"quick_{cid}" para que se limpie sola al cambiar de cliente
+                    nums_escritos = c_inp.text_input("Ej: 01, 03, 05", label_visibility="collapsed", key=f"quick_{cid}")
+                    
+                    if c_sel.button("Aplicar", use_container_width=True):
+                        if nums_escritos:
+                            # Reemplazamos comas y guiones por espacios para separar fácil
+                            texto_limpio = nums_escritos.replace(',', ' ').replace('-', ' ')
+                            nuevos_sel = []
+                            for p in texto_limpio.split():
+                                if p.strip().isdigit():
+                                    val = int(p.strip())
+                                    # Si el número pertenece a este cliente, lo seleccionamos
+                                    if val in todos_nums:
+                                        nuevos_sel.append(val)
+                            
+                            # Actualizamos la selección con los números encontrados
+                            st.session_state.seleccion_actual = nuevos_sel
+                            st.rerun()
+                    # -------------------------------------------
+
                     cols_sel = st.columns(5)
                     datos_boletos_map = {} 
 
@@ -910,7 +947,6 @@ def main():
 
                     st.divider()
 
-                    # C. ZONA ABONO
                     if len(numeros_sel) == 1:
                         dato_unico = datos_sel[0]
                         deuda = dato_unico['precio'] - dato_unico['abonado']
@@ -923,10 +959,9 @@ def main():
                                     nt = dato_unico['abonado'] + m
                                     ne = 'pagado' if (dato_unico['precio'] - nt) <= 0.01 else 'abonado'
                                     run_query("UPDATE boletos SET total_abonado=%s, estado=%s WHERE sorteo_id=%s AND numero=%s", (nt, ne, id_sorteo, dato_unico['numero']), fetch=False)
-                                    log_movimiento(id_sorteo, 'ABONO', f"Boleto {fmt_num.format(dato_unico['numero'])} - {datos_c['nombre']}", m) # LOG
+                                    log_movimiento(id_sorteo, 'ABONO', f"Boleto {fmt_num.format(dato_unico['numero'])} - {datos_c['nombre']}", m)
                                     st.session_state.seleccion_actual = []; st.rerun()
 
-                    # D. BOTONES DE ACCIÓN
                     if numeros_sel:
                         c_acc1, c_acc2, c_acc3 = st.columns(3)
                         show_pagar = any(d['estado'] != 'pagado' for d in datos_sel)
@@ -936,29 +971,27 @@ def main():
                             if c_acc1.button("✅ PAGAR", use_container_width=True):
                                 for d in datos_sel:
                                     run_query("UPDATE boletos SET estado='pagado', total_abonado=%s WHERE sorteo_id=%s AND numero=%s", (d['precio'], id_sorteo, d['numero']), fetch=False)
-                                    log_movimiento(id_sorteo, 'PAGO_COMPLETO', f"Boleto {fmt_num.format(d['numero'])} - {datos_c['nombre']}", d['precio']) # LOG
+                                    log_movimiento(id_sorteo, 'PAGO_COMPLETO', f"Boleto {fmt_num.format(d['numero'])} - {datos_c['nombre']}", d['precio'])
                                 st.session_state.seleccion_actual = []; st.success("Pagado"); time.sleep(1); st.rerun()
                         
                         if show_apartar:
                             if c_acc2.button("📌 APARTAR", use_container_width=True):
                                 for d in datos_sel:
                                     run_query("UPDATE boletos SET estado='apartado', total_abonado=0 WHERE sorteo_id=%s AND numero=%s", (id_sorteo, d['numero']), fetch=False)
-                                    log_movimiento(id_sorteo, 'REVERTIR_APARTADO', f"Boleto {fmt_num.format(d['numero'])} - {datos_c['nombre']}", 0) # LOG
+                                    log_movimiento(id_sorteo, 'REVERTIR_APARTADO', f"Boleto {fmt_num.format(d['numero'])} - {datos_c['nombre']}", 0)
                                 st.session_state.seleccion_actual = []; st.success("Apartado"); time.sleep(1); st.rerun()
 
                         if c_acc3.button("🗑️ LIBERAR", type="primary", use_container_width=True):
                             for d in datos_sel:
                                 run_query("DELETE FROM boletos WHERE sorteo_id=%s AND numero=%s", (id_sorteo, d['numero']), fetch=False)
-                                log_movimiento(id_sorteo, 'LIBERACION', f"Boleto {fmt_num.format(d['numero'])} - {datos_c['nombre']}", 0) # LOG
+                                log_movimiento(id_sorteo, 'LIBERACION', f"Boleto {fmt_num.format(d['numero'])} - {datos_c['nombre']}", 0)
                             st.session_state.seleccion_actual = []; st.warning("Liberados"); time.sleep(1); st.rerun()
                     
                     st.divider()
                     
-                    # E. WHATSAPP Y PDF (Orden PDF -> WhatsApp)
                     col_pdf, col_wa = st.columns([1, 1])
                     
                     if numeros_sel:
-                        # --- PREPARACIÓN DE DATOS ---
                         partes_nom = datos_c['nombre'].strip().upper().split()
                         if len(partes_nom) >= 3: nom_archivo_cli = f"{partes_nom[0]}_{partes_nom[2]}"
                         elif len(partes_nom) == 2: nom_archivo_cli = f"{partes_nom[0]}_{partes_nom[1]}"
@@ -974,7 +1007,6 @@ def main():
                             f"'{nombre_s}' del día {fecha_s} a las {hora_s}. ¡Suerte!🍀"
                         )
 
-                        # 1. PDF (Izquierda)
                         with col_pdf:
                             st.write("**Descargar PDFs:**")
                             for d in datos_sel:
@@ -989,7 +1021,6 @@ def main():
                                 n_file = f"{fmt_num.format(d['numero'])} {nom_archivo_cli} ({d['estado'].upper()}).pdf"
                                 st.download_button(f"📄 {fmt_num.format(d['numero'])}", pdf_data, n_file, "application/pdf", key=f"d_{d['numero']}", use_container_width=True)
 
-                        # 2. WHATSAPP (Derecha)
                         with col_wa:
                             st.write("**Enviar:**")
                             tel_raw = datos_c['telefono']
@@ -1000,11 +1031,10 @@ def main():
                             else: tel_final = tel_clean
                             
                             if len(tel_final) >= 7:
-                                link_wa = f"https://api.whatsapp.com/send?phone={tel_final}&text={urllib.parse.quote(msg_wa)}"
+                                link_wa = f"https://wa.me/{tel_final}?text={urllib.parse.quote(msg_wa)}"
                                 st.link_button("📲 WhatsApp", link_wa, use_container_width=True)
                             else:
                                 st.warning(f"Tel Inválido: {tel_raw}")
-
                     else:
                         col_pdf.info("Selecciona para ver PDFs")
                         col_wa.button("📲 WhatsApp", disabled=True, use_container_width=True)
@@ -1013,19 +1043,15 @@ def main():
     with tab_clientes:
         st.header("Gestión Clientes")
         
-        # --- ZONA DE EDICIÓN O CREACIÓN ---
-        # Si hay un ID en edición, mostramos el formulario de editar. Si no, el de crear.
         if 'edit_id' in st.session_state:
-            # === MODO EDICIÓN ===
             id_e = st.session_state.edit_id
-            vals = st.session_state.edit_vals # [id, nombre, cedula, tel, dir, codigo]
+            vals = st.session_state.edit_vals 
             
             st.info(f"✏️ Editando a: **{vals[1]}**")
             
             with st.form("edit_cli_form"):
                 en = st.text_input("Nombre", value=vals[1]).upper()
                 
-                # Descomponer Cédula (V-123456) para el selector
                 ced_parts = vals[2].split('-') if vals[2] and '-' in vals[2] else ["V", vals[2]]
                 pre_tipo = ced_parts[0] if ced_parts[0] in ["V", "E"] else "V"
                 pre_num = ced_parts[1] if len(ced_parts) > 1 else vals[2]
@@ -1057,7 +1083,6 @@ def main():
             st.divider()
             
         else:
-            # === MODO CREACIÓN (Nuevo Cliente) ===
             with st.expander("➕ Nuevo Cliente", expanded=False):
                 with st.form("new_cli"):
                     st.write("📝 **Datos del Cliente**")
@@ -1074,7 +1099,6 @@ def main():
                         if nn and ced_num and nt:
                             cedula_final = f"{tipo_doc}-{ced_num}"
                             
-                            # Generar Código
                             codigos_existentes = set()
                             rows = run_query("SELECT codigo FROM clientes")
                             if rows:
@@ -1098,46 +1122,41 @@ def main():
                         else:
                             st.error("⚠️ Faltan datos")
 
-        # --- LISTA DE CLIENTES ---
         st.write("### 📋 Lista de Clientes")
         q = st.text_input("🔍 Buscar cliente (Nombre o Cédula)...", key="search_cli")
         sql = "SELECT id, nombre_completo, cedula, telefono, direccion, codigo FROM clientes"
-        if q: sql += f" WHERE nombre_completo ILIKE '%{q}%' OR cedula ILIKE '%{q}%'"
-        sql += " ORDER BY id DESC LIMIT 15"
-        res = run_query(sql)
+        
+        if q: 
+            sql += " WHERE nombre_completo ILIKE %s OR cedula ILIKE %s"
+            sql += " ORDER BY id DESC LIMIT 15"
+            res = run_query(sql, (f"%{q}%", f"%{q}%"))
+        else:
+            sql += " ORDER BY id DESC LIMIT 15"
+            res = run_query(sql)
         
         if res:
             for c in res:
-                # c: [0=id, 1=nombre, 2=cedula, 3=tel, 4=dir, 5=codigo]
                 with st.container(border=True):
                     c1, c2 = st.columns([3,1])
                     with c1:
-                        st.markdown(f"**{c[1]}**")
+                        st.markdown(f"<b>{c[1]}</b>", unsafe_allow_html=True)
                         st.caption(f"🆔 {c[2]} | 🔑 Cód: {c[5]}")
                         st.caption(f"📞 {c[3]} | 📍 {c[4]}")
                     with c2:
-                        # Al dar click, guardamos estado y RECARGAMOS para que el form aparezca arriba
                         if st.button("✏️", key=f"edit_{c[0]}", use_container_width=True):
                             st.session_state.edit_id = c[0]
                             st.session_state.edit_vals = c
-                            st.rerun() # <--- IMPORTANTE: Fuerza la actualización inmediata
+                            st.rerun()
 
 # ---------------- PESTAÑA COBRANZA ----------------
     with tab_cobranza:
         st.header("📊 Gestión de Cobranza")
         
-        # Botón para refrescar datos en pantalla
         if st.button("🔄 Actualizar Datos", use_container_width=True):
             st.rerun()
 
         st.write("---")
         
-        # ========================================================
-        #  GENERACIÓN DEL REPORTE UNIFICADO (IGUAL A PC)
-        # ========================================================
-        
-        # 1. OBTENER DATOS DE "ESTADO ACTUAL" (Los 90 boletos ocupados)
-        # Esta consulta trae CUALQUIER boleto que tenga dueño, sin importar si se vendió en PC o Móvil.
         sql_estado = """
             SELECT 
                 b.numero as "Número", 
@@ -1156,50 +1175,74 @@ def main():
         """
         rows_estado = run_query(sql_estado, (id_sorteo,))
 
-        # 2. OBTENER DATOS DE "HISTORIAL" (Bitácora de movimientos)
         sql_hist = """
             SELECT 
-                fecha_registro as "Fecha/Hora",
-                usuario as "Usuario", 
-                accion as "Acción", 
-                detalle as "Detalle", 
-                monto as "Monto ($)"
+                fecha_hora,
+                usuario, 
+                accion, 
+                detalle, 
+                monto
             FROM historial 
             WHERE sorteo_id = %s 
-            ORDER BY id DESC
+            ORDER BY id ASC
         """
         rows_hist = run_query(sql_hist, (id_sorteo,))
 
-        # 3. CREAR EL ARCHIVO EXCEL CON 2 PESTAÑAS
         buffer = io.BytesIO()
-        
-        # Usamos un bloque try/except para evitar errores si no hay datos en alguna tabla
         hay_datos = False
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
             
-            # --- HOJA 1: ESTADO GENERAL (Tus 90 boletos) ---
             if rows_estado:
                 df_estado = pd.DataFrame(rows_estado, columns=["Número", "Cliente", "Teléfono", "Cédula", "Estado", "Precio ($)", "Abonado ($)", "Saldo Pendiente ($)", "Fecha Asignación"])
-                # Formatear fecha para que se vea bien
                 try: df_estado["Fecha Asignación"] = pd.to_datetime(df_estado["Fecha Asignación"]).dt.strftime('%d/%m/%Y')
                 except: pass
                 
                 df_estado.to_excel(writer, index=False, sheet_name='Estado General')
                 hay_datos = True
             else:
-                # Si no hay ventas, creamos una hoja vacía con encabezados
                 pd.DataFrame(columns=["Mensaje"]).to_excel(writer, sheet_name='Estado General', index=False)
 
-            # --- HOJA 2: MOVIMIENTOS (Bitácora) ---
             if rows_hist:
-                df_hist = pd.DataFrame(rows_hist, columns=["Fecha/Hora", "Usuario", "Acción", "Detalle", "Monto ($)"])
-                try: df_hist["Fecha/Hora"] = pd.to_datetime(df_hist["Fecha/Hora"]).dt.strftime('%d/%m/%Y %I:%M %p')
-                except: pass
+                df_hist = pd.DataFrame(rows_hist, columns=["FechaRaw", "Usuario", "Acción", "Detalle", "MontoRaw"])
+                df_hist.insert(0, "Nro. Transacción", range(1, len(df_hist) + 1))
                 
-                df_hist.to_excel(writer, index=False, sheet_name='Historial Movimientos')
+                try:
+                    df_hist["FechaRaw"] = pd.to_datetime(df_hist["FechaRaw"]) - pd.Timedelta(hours=4)
+                    df_hist["Fecha"] = df_hist["FechaRaw"].dt.strftime('%d/%m/%Y')
+                    df_hist["Hora"] = df_hist["FechaRaw"].dt.strftime('%I:%M %p') 
+                except:
+                    df_hist["Fecha"] = df_hist["FechaRaw"].astype(str)
+                    df_hist["Hora"] = ""
+
+                def separar_detalle(texto):
+                    boleto = texto
+                    cliente = ""
+                    if " - " in str(texto):
+                        partes = str(texto).split(" - ", 1)
+                        boleto = partes[0].strip() 
+                        resto = partes[1].strip()  
+                        if " | " in resto:
+                            cliente = resto.split(" | ")[0].strip()
+                        else:
+                            cliente = resto
+                    return pd.Series([boleto, cliente])
+
+                df_hist[["Boletos", "Cliente"]] = df_hist["Detalle"].apply(separar_detalle)
+                df_hist["Monto ($)"] = df_hist["MontoRaw"].apply(lambda x: "{:.2f}".format(float(x) if x else 0.0))
+                
+                cols_finales = ["Nro. Transacción", "Fecha", "Hora", "Usuario", "Acción", "Boletos", "Cliente", "Monto ($)"]
+                df_export = df_hist[cols_finales]
+                
+                df_export.to_excel(writer, index=False, sheet_name='Historial Movimientos')
+                
+                worksheet = writer.sheets['Historial Movimientos']
+                worksheet.set_column('A:A', 10) 
+                worksheet.set_column('B:C', 12) 
+                worksheet.set_column('F:F', 15) 
+                worksheet.set_column('G:G', 40) 
+                
                 hay_datos = True
         
-        # 4. MOSTRAR EL BOTÓN DE DESCARGA
         if hay_datos:
             st.download_button(
                 label="📥 DESCARGAR REPORTE COMPLETO (Excel)",
@@ -1207,18 +1250,13 @@ def main():
                 file_name=f"Reporte_Total_{nombre_s}.xlsx",
                 mime="application/vnd.ms-excel",
                 use_container_width=True,
-                type="primary" # Botón destacado
+                type="primary"
             )
         else:
             st.info("No hay información para generar reporte.")
 
         st.divider()
             
-        # ========================================================
-        #  VISUALIZACIÓN DE COBRANZA EN PANTALLA
-        # ========================================================
-        # (Esto sigue igual para que puedas cobrar rápido desde el cel)
-        
         raw_deudores = run_query("""
             SELECT c.nombre_completo, c.telefono, b.numero, b.precio, b.total_abonado
             FROM boletos b
@@ -1259,7 +1297,8 @@ def main():
                 with st.container(border=True):
                     c_info, c_btn = st.columns([2, 1])
                     with c_info:
-                        st.markdown(f"👤 **{nom}**")
+                        # Se agrega .strip() para evitar error de los asteriscos **
+                        st.markdown(f"👤 **{nom.strip()}**")
                         st.caption(f"🎟️ Boletos: **{str_numeros}**")
                         st.write(f"🔴 Deuda: :red[**${d['t_deuda']:,.2f}**]")
                     with c_btn:
@@ -1268,22 +1307,27 @@ def main():
                             if len(tel_clean) == 10: tel_clean = "58" + tel_clean
                             elif len(tel_clean) == 11 and tel_clean.startswith("0"): tel_clean = "58" + tel_clean[1:]
                             
-                            msg = (f"Hola {nom}, saludos de Sorteos Milán. "
-                                   f"Tienes un saldo pendiente de ${d['t_deuda']:.2f} "
-                                   f"por los boletos: {str_numeros}. Agradecemos tu pago.")
-                            link = f"https://api.whatsapp.com/send?phone={tel_clean}&text={urllib.parse.quote(msg)}"
+                            txt_concepto = "de tus boletos" if len(lista_nums) > 1 else "de tu boleto"
+                            
+                            # Generamos la fecha inteligente
+                            txt_fecha = formato_fecha_inteligente(fecha_s)
+                            
+                            # MENSAJE DE COBRANZA INTELIGENTE
+                            msg = (f"Hola {nom.strip()}, saludos de Sorteos Milán. "
+                                   f"Te recordamos amablemente que tienes un saldo pendiente de ${d['t_deuda']:.2f} "
+                                   f"{txt_concepto}: {str_numeros}, para el sorteo {txt_fecha} a las {hora_s}. "
+                                   f"Agradecemos tu pago. ¡Gracias! 🍀")
+                            
+                            link = f"https://wa.me/{tel_clean}?text={urllib.parse.quote(msg)}"
+                            
                             st.link_button("📲 Cobrar", link, use_container_width=True)
-                        else:
-                            st.warning("Sin Tel")
-
+                            
 # ============================================================================
 #  PUNTO DE ENTRADA (CON LOGIN Y TIMEOUT)
 # ============================================================================
 if __name__ == "__main__":
-    # 1. Verificamos contraseña primero
     if check_password():
-        # 2. Si la contraseña es correcta, verificamos inactividad
         if verificar_inactividad():
-            # 3. Si está activo, corremos la app
             main()
+
 
