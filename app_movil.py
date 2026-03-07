@@ -124,39 +124,7 @@ def get_whatsapp_link_exacto(telefono, boleto_num, estado, cliente_nom, sorteo_n
     return f"https://wa.me/{tel_clean}?text={urllib.parse.quote(mensaje)}"
 
 # ============================================================================
-#  CALCULADORA DE TARIFAS
-# ============================================================================
-def calcular_total_pagar_escala(cantidad_boletos, config_rifa):
-    tarifas = []
-    if config_rifa.get('cant_p1') and config_rifa.get('prec_p1') and int(config_rifa['cant_p1']) > 0:
-        c = int(config_rifa['cant_p1'])
-        tarifas.append((c, float(config_rifa['prec_p1']) / c))
-    if config_rifa.get('cant_p2') and config_rifa.get('prec_p2') and int(config_rifa['cant_p2']) > 0:
-        c = int(config_rifa['cant_p2'])
-        tarifas.append((c, float(config_rifa['prec_p2']) / c))
-    if config_rifa.get('cant_p3') and config_rifa.get('prec_p3') and int(config_rifa['cant_p3']) > 0:
-        c = int(config_rifa['cant_p3'])
-        tarifas.append((c, float(config_rifa['prec_p3']) / c))
-        
-    if not tarifas:
-        precio_base = float(config_rifa.get('precio_boleto') or 0)
-        return cantidad_boletos * precio_base
-
-    tarifas.sort(key=lambda x: x[0], reverse=True)
-    precio_unitario_aplicado = None
-    
-    for cant_minima, precio_unit_promo in tarifas:
-        if cantidad_boletos >= cant_minima:
-            precio_unitario_aplicado = precio_unit_promo
-            break
-            
-    if precio_unitario_aplicado is None:
-        precio_unitario_aplicado = tarifas[-1][1]
-        
-    return cantidad_boletos * precio_unitario_aplicado
-
-# ============================================================================
-#  PDF DIGITAL (APP MÓVIL)
+#  2. PDF DIGITAL (APP MÓVIL)
 # ============================================================================
 def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_boletos=1000):
     buffer = io.BytesIO()
@@ -179,7 +147,7 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
 
     lista_claves = ["premio1", "premio2", "premio3", "premio_extra1", "premio_extra2"]
     count_premios = sum(1 for k in lista_claves if rifa.get(k))
-    total_h = 440 + max(0, (count_premios - 3) * 20)
+    total_h = 390 + max(0, (count_premios - 3) * 20)
     total_w = 390
     
     c = canvas.Canvas(buffer, pagesize=(total_w, total_h))
@@ -223,9 +191,9 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
     y -= 8
     c.line(m_izq, y, m_der, y) 
     
-    y_start = y - 25
+    y_start = y - 20
     col_izq_x = m_izq
-    col_der_x = centro - 10 
+    col_der_x = centro - 5 
     
     y = y_start
     c.setFont("Helvetica-Bold", 10); c.drawString(col_izq_x, y, "SORTEO:")
@@ -236,23 +204,7 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
     hora_sorteo = str(rifa.get('hora_sorteo','')).lower()
     c.drawString(col_izq_x + 50, y, f"{rifa.get('fecha_sorteo','')} {hora_sorteo}")
     
-    # 🔥 NUEVO: DIBUJAR TARIFAS EN PDF MÓVIL
-    y -= 25
-    c.setFont("Helvetica-Bold", 10)
-    c.drawString(col_izq_x, y, "TARIFAS:")
-    y -= 12
-    c.setFont("Helvetica", 9)
-    if rifa.get('cant_p1') and rifa.get('prec_p1'):
-        c.drawString(col_izq_x, y, f"• {rifa['cant_p1']} x ${float(rifa['prec_p1']):,.2f}")
-        y -= 12
-    if rifa.get('cant_p2') and rifa.get('prec_p2'):
-        c.drawString(col_izq_x, y, f"• {rifa['cant_p2']} x ${float(rifa['prec_p2']):,.2f}")
-        y -= 12
-    if rifa.get('cant_p3') and rifa.get('prec_p3'):
-        c.drawString(col_izq_x, y, f"• {rifa['cant_p3']} x ${float(rifa['prec_p3']):,.2f}")
-    
     y_prem = y_start
-    c.setFont("Helvetica-Bold", 10)
     c.drawString(col_der_x, y_prem, "PREMIOS:")
     y_prem -= 12; c.setFont("Helvetica", 9)
     etiquetas = ["Triple A:", "Triple B:", "Triple Z:", "Especial 1:", "Especial 2:"]
@@ -264,7 +216,7 @@ def generar_pdf_memoria(numero_boleto, datos_completos, config_db, cantidad_bole
             y_prem -= 12
     
     y_fin_arriba = min(y, y_prem)
-    y_linea = y_fin_arriba - 20 # 🔥 Separación de la línea dorada
+    y_linea = y_fin_arriba - 3
     
     c.setLineWidth(1)
     c.setStrokeColorRGB(0.70, 0.55, 0.35) 
@@ -350,11 +302,11 @@ def generar_imagen_reporte(id_sorteo, config_completa, cantidad_boletos, tipo_im
     if cantidad_boletos <= 100:
         cols_img = 10; rows_img = 10
         base_w = 2000; base_h = 2500
-        font_s_title = 130; font_s_info = 75; font_s_num = 100 
+        font_s_title = 80; font_s_info = 40; font_s_num = 60
     else:
-        cols_img = 25; rows_img = 40
-        base_w = 4000; base_h = 3000
-        font_s_title = 150; font_s_info = 80; font_s_num = 65
+        cols_img = 20; rows_img = 50 
+        base_w = 2700; base_h = 4800 # Formato 9:16 exacto
+        font_s_title = 100; font_s_info = 50; font_s_num = 45
     
     margin_px = 80
     header_h = 450
@@ -387,22 +339,14 @@ def generar_imagen_reporte(id_sorteo, config_completa, cantidad_boletos, tipo_im
     draw = ImageDraw.Draw(img)
     
     try:
-        font_title = ImageFont.truetype("arialbd.ttf", font_s_title)
-        font_info = ImageFont.truetype("arial.ttf", font_s_info)
-        font_num = ImageFont.truetype("arialbd.ttf", font_s_num)
+        font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", font_s_title)
+        font_info = ImageFont.truetype("DejaVuSans.ttf", font_s_info)
+        font_num = ImageFont.truetype("DejaVuSans-Bold.ttf", font_s_num)
     except:
-        try:
-            # Opción B: Fuentes estándar de Linux/Streamlit
-            font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", font_s_title)
-            font_info = ImageFont.truetype("DejaVuSans.ttf", font_s_info)
-            font_num = ImageFont.truetype("DejaVuSans-Bold.ttf", font_s_num)
-        except:
-            # Fallback final 
-            font_title = ImageFont.load_default()
-            font_info = ImageFont.load_default()
-            font_num = ImageFont.load_default()
+        font_title = ImageFont.load_default()
+        font_info = ImageFont.load_default()
+        font_num = ImageFont.load_default()
 
-    # 🔥 ESTAS ERAN LAS LÍNEAS QUE FALTABAN: Extraer info y dibujar el título
     rifa = config_completa['rifa']
     
     titulo = rifa['nombre'].upper()
@@ -410,25 +354,13 @@ def generar_imagen_reporte(id_sorteo, config_completa, cantidad_boletos, tipo_im
     tw_t = bbox_t[2] - bbox_t[0]
     draw.text(((lienzo_w - tw_t)/2, 60), titulo, fill='#1a73e8', font=font_title)
     
-    # --- AJUSTE DE POSICIÓN PARA FUENTES GRANDES ---
-    iy = 240 # Bajamos los textos para que no se monten en el título
+    iy = 180
     draw.text((margin_px, iy), f"📅 Fecha: {datetime.now().strftime('%d/%m/%Y')}", fill='#555', font=font_info)
-    iy += 90 
+    iy += 60
     txt_sorteo = f"🎲 Sorteo: {rifa.get('fecha_sorteo','')} {rifa.get('hora_sorteo','')}"
     draw.text((margin_px, iy), txt_sorteo, fill='#388E3C', font=font_info)
-    iy += 95
-    draw.text((margin_px, iy), "💰 PRECIOS:", fill='#D32F2F', font=font_info)
-    
-    iy += 55
-    if rifa.get('cant_p1') and rifa.get('prec_p1'):
-        draw.text((margin_px + 30, iy), f"• {rifa['cant_p1']} x ${float(rifa['prec_p1']):,.2f}", fill='black', font=font_info)
-        iy += 50
-    if rifa.get('cant_p2') and rifa.get('prec_p2'):
-        draw.text((margin_px + 30, iy), f"• {rifa['cant_p2']} x ${float(rifa['prec_p2']):,.2f}", fill='black', font=font_info)
-        iy += 50
-    if rifa.get('cant_p3') and rifa.get('prec_p3'):
-        draw.text((margin_px + 30, iy), f"• {rifa['cant_p3']} x ${float(rifa['prec_p3']):,.2f}", fill='black', font=font_info)
-        iy += 50
+    iy += 60
+    draw.text((margin_px, iy), f"💵 Precio: {rifa.get('precio_boleto',0)} $", fill='#D32F2F', font=font_info)
     
     # AJUSTE HACIA EL CENTRO IGUAL A PC
     if lienzo_w >= 2700:
@@ -520,7 +452,7 @@ def main():
 
     st.title("📱 Sorteos Milán")
 
-    sorteos = run_query("SELECT id, nombre, precio_boleto, fecha_sorteo, hora_sorteo, premio1, premio2, premio3, premio_extra1, premio_extra2, cant_promo1, precio_promo1, cant_promo2, precio_promo2, cant_promo3, precio_promo3 FROM sorteos WHERE activo = TRUE")
+    sorteos = run_query("SELECT id, nombre, precio_boleto, fecha_sorteo, hora_sorteo, premio1, premio2, premio3, premio_extra1, premio_extra2 FROM sorteos WHERE activo = TRUE")
     config_rows = run_query("SELECT clave, valor FROM configuracion")
     
     if not sorteos: st.warning("No hay sorteos activos."); return
@@ -567,11 +499,8 @@ def main():
     st.caption(f"⚙️ Modo detectado: {cantidad_boletos} boletos")
 
     rifa_config = {
-        "nombre": nombre_s, "precio_boleto": precio_s, "fecha_sorteo": str(fecha_s), "hora_sorteo": str(hora_s),
-        "premio1": s_data[5], "premio2": s_data[6], "premio3": s_data[7], "premio_extra1": s_data[8], "premio_extra2": s_data[9],
-        "cant_p1": s_data[10], "prec_p1": s_data[11],
-        "cant_p2": s_data[12], "prec_p2": s_data[13],
-        "cant_p3": s_data[14], "prec_p3": s_data[15]
+        "nombre": nombre_s, "precio_boleto": precio_s, "fecha_sorteo": str(fecha_s), "hora_sorteo": str(s_data[4]),
+        "premio1": s_data[5], "premio2": s_data[6], "premio3": s_data[7], "premio_extra1": s_data[8], "premio_extra2": s_data[9]
     }
     config_full = {'rifa': rifa_config, 'empresa': empresa_config}
     
@@ -760,24 +689,20 @@ def main():
                         else:
                             with st.form("venta_single"):
                                 st.write(f"### 📝 Vender Boleto {str_num}")
-                                
-                                # 🔥 Calcula precio unitario con la promo
-                                precio_a_cobrar = calcular_total_pagar_escala(1, rifa_config)
-                                
                                 clientes = run_query("SELECT id, nombre_completo, codigo FROM clientes ORDER BY nombre_completo")
                                 opc_cli = {f"{c[1]} | {c[2] or 'S/C'}": c[0] for c in clientes} if clientes else {}
                                 nom_sel = st.selectbox("👤 Cliente:", options=list(opc_cli.keys()), index=None)
                                 
                                 c_ab, c_pr = st.columns(2)
                                 abono = c_ab.number_input("Abono Inicial ($)", value=0.0) 
-                                c_pr.metric("Precio Unitario", f"${precio_a_cobrar:,.2f}")
+                                c_pr.metric("Precio", f"${precio_s}")
                                 
                                 if st.form_submit_button("💾 ASIGNAR", use_container_width=True):
                                     if nom_sel:
                                         cid = opc_cli[nom_sel]
-                                        est = 'pagado' if abono >= precio_a_cobrar else 'abonado'
+                                        est = 'pagado' if abono >= precio_s else 'abonado'
                                         if abono == 0: est = 'apartado'
-                                        run_query("INSERT INTO boletos (sorteo_id, numero, estado, precio, cliente_id, total_abonado, fecha_asignacion) VALUES (%s, %s, %s, %s, %s, %s, NOW())", (id_sorteo, numero, est, precio_a_cobrar, cid, abono), fetch=False)
+                                        run_query("INSERT INTO boletos (sorteo_id, numero, estado, precio, cliente_id, total_abonado, fecha_asignacion) VALUES (%s, %s, %s, %s, %s, %s, NOW())", (id_sorteo, numero, est, precio_s, cid, abono), fetch=False)
                                         log_movimiento(id_sorteo, 'ASIGNACION', f"Boleto {str_num} - {nom_sel}", abono)
                                         st.success("✅ Asignado"); time.sleep(1); st.rerun()
                                     else: st.error("⚠️ Falta cliente")
@@ -793,34 +718,29 @@ def main():
                             st.success(f"🟢 {len(lista_busqueda)} boletos disponibles.")
                             
                             with st.form("venta_multi"):
-                                st.write(f"### 📝 Asignar {len(lista_busqueda)} boletos")
-                                
-                                # 🔥 Calcula precio del paquete y unitario
-                                cantidad_venta = len(lista_busqueda)
-                                total_paquete = calcular_total_pagar_escala(cantidad_venta, rifa_config)
-                                precio_unitario = total_paquete / cantidad_venta if cantidad_venta > 0 else 0
-                                
+                                st.write(f"### 📝 Asignar: {lista_fmt}")
                                 clientes = run_query("SELECT id, nombre_completo, codigo FROM clientes ORDER BY nombre_completo")
-                                opc_cli = {f"{c[1]} | {c[2] or 'S/C'}": c[0] for c in clientes} if clientes else {}
-                                nom_sel = st.selectbox("👤 Cliente:", options=list(opc_cli.keys()), index=None)
+                                opc_cli = {}
+                                if clientes:
+                                    for c in clientes:
+                                        cod_d = c[2] if c[2] else "S/C"
+                                        opc_cli[f"{c[1]} | {cod_d}"] = c[0]
                                 
+                                nom_sel = st.selectbox("👤 Cliente:", options=list(opc_cli.keys()), index=None)
                                 st.divider()
                                 c_ab, c_pr = st.columns(2)
-                                # Ahora pedimos el abono total, es más fácil para el usuario
-                                abono_total = c_ab.number_input("Abono TOTAL ($)", value=0.0, min_value=0.0, max_value=float(total_paquete), step=1.0)
-                                c_pr.metric("Total a Pagar (Promo)", f"${total_paquete:,.2f}")
+                                abono_unit = c_ab.number_input("Abono por Boleto ($)", value=0.0, min_value=0.0, step=1.0)
+                                total_operacion = abono_unit * len(lista_busqueda)
+                                c_pr.metric("Total a Pagar", f"${total_operacion:,.2f}")
                                 
                                 if st.form_submit_button("💾 ASIGNAR TODOS", use_container_width=True):
                                     if nom_sel:
                                         cid = opc_cli[nom_sel]
-                                        abono_unitario = abono_total / cantidad_venta if cantidad_venta > 0 else 0
-                                        est = 'pagado' if abono_total >= total_paquete else 'abonado'
-                                        if abono_total == 0: est = 'apartado'
-                                        
+                                        est = 'pagado' if abono_unit >= precio_s else 'abonado'
+                                        if abono_unit == 0: est = 'apartado'
                                         for n_bol in lista_busqueda:
-                                            run_query("INSERT INTO boletos (sorteo_id, numero, estado, precio, cliente_id, total_abonado, fecha_asignacion) VALUES (%s, %s, %s, %s, %s, %s, NOW())", (id_sorteo, n_bol, est, precio_unitario, cid, abono_unitario), fetch=False)
-                                        
-                                        log_movimiento(id_sorteo, 'ASIGNACION_MASIVA', f"{cantidad_venta} Boletos - {nom_sel}", abono_total)
+                                            run_query("INSERT INTO boletos (sorteo_id, numero, estado, precio, cliente_id, total_abonado, fecha_asignacion) VALUES (%s, %s, %s, %s, %s, %s, NOW())", (id_sorteo, n_bol, est, precio_s, cid, abono_unit), fetch=False)
+                                            log_movimiento(id_sorteo, 'ASIGNACION_MASIVA', f"Boleto {fmt_num.format(n_bol)} - {nom_sel}", abono_unit)
                                         st.success("✅ Asignados"); time.sleep(1); st.rerun()
                                     else: st.error("⚠️ Selecciona un cliente.")
 
@@ -901,8 +821,7 @@ def main():
                     # --- NUEVO: SELECCIÓN RÁPIDA POR NÚMEROS ---
                     st.caption("✏️ **Selección rápida por N°:**")
                     c_inp, c_sel = st.columns([3, 1])
-                    # Agregamos key=f"quick_{cid}" para que se limpie sola al cambiar de cliente
-                    nums_escritos = c_inp.text_input("Ej: 01, 03, 05", label_visibility="collapsed", key=f"quick_{cid}")
+                    nums_escritos = c_inp.text_input("Ej: 01, 03, 05", label_visibility="collapsed")
                     
                     if c_sel.button("Aplicar", use_container_width=True):
                         if nums_escritos:
@@ -1123,14 +1042,9 @@ def main():
         st.write("### 📋 Lista de Clientes")
         q = st.text_input("🔍 Buscar cliente (Nombre o Cédula)...", key="search_cli")
         sql = "SELECT id, nombre_completo, cedula, telefono, direccion, codigo FROM clientes"
-        
-        if q: 
-            sql += " WHERE nombre_completo ILIKE %s OR cedula ILIKE %s"
-            sql += " ORDER BY id DESC LIMIT 15"
-            res = run_query(sql, (f"%{q}%", f"%{q}%"))
-        else:
-            sql += " ORDER BY id DESC LIMIT 15"
-            res = run_query(sql)
+        if q: sql += f" WHERE nombre_completo ILIKE '%{q}%' OR cedula ILIKE '%{q}%'"
+        sql += " ORDER BY id DESC LIMIT 15"
+        res = run_query(sql)
         
         if res:
             for c in res:
@@ -1327,5 +1241,16 @@ if __name__ == "__main__":
     if check_password():
         if verificar_inactividad():
             main()
+
+
+
+
+
+
+
+
+
+
+
 
 
