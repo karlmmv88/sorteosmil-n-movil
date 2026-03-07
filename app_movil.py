@@ -397,11 +397,19 @@ def generar_imagen_reporte(id_sorteo, config_completa, cantidad_boletos, tipo_im
             font_info = ImageFont.truetype("DejaVuSans.ttf", font_s_info)
             font_num = ImageFont.truetype("DejaVuSans-Bold.ttf", font_s_num)
         except:
-            # Fallback final (Esto es lo que causa el tamaño pequeño si falla lo anterior)
+            # Fallback final 
             font_title = ImageFont.load_default()
             font_info = ImageFont.load_default()
             font_num = ImageFont.load_default()
 
+    # 🔥 ESTAS ERAN LAS LÍNEAS QUE FALTABAN: Extraer info y dibujar el título
+    rifa = config_completa['rifa']
+    
+    titulo = rifa['nombre'].upper()
+    bbox_t = draw.textbbox((0,0), titulo, font=font_title)
+    tw_t = bbox_t[2] - bbox_t[0]
+    draw.text(((lienzo_w - tw_t)/2, 60), titulo, fill='#1a73e8', font=font_title)
+    
     # --- AJUSTE DE POSICIÓN PARA FUENTES GRANDES ---
     iy = 240 # Bajamos los textos para que no se monten en el título
     draw.text((margin_px, iy), f"📅 Fecha: {datetime.now().strftime('%d/%m/%Y')}", fill='#555', font=font_info)
